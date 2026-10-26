@@ -196,6 +196,12 @@ File er naam sudhu `.env` hote hobe — `env.txt` hole cholbe na!
 Free key te protidin ekta limit thake. Sesh hoye gele **porer din** abar hobe.
 Beshi use korle aistudio.google.com theke notun key baniye nite paro.
 
+### ❌ "Model no longer available" error ashle
+Bhoy nai — program chalu howar somoy nijei ekhonkar model khuje ney.
+Google kokhono purono model bondho kore dile KUTU nijei notun model
+bechhe nibe (kalo window te `🧠 Model:` line e kon model cholche dekha jay).
+Code e kichu bodlate hobe na.
+
 ### ❌ Mic shune na / kichu bole na
 
 Ekhon kalo window te nijei dekha jay KUTU ki shunlo:

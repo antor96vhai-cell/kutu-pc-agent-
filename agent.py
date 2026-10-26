@@ -55,8 +55,14 @@ WAKE_FILLERS = ["hey", "হে", "ও", "oi", "ঐ"]
 VOICE_BN = "bn-BD-NabanitaNeural"   # Bangla meye voice
 VOICE_EN = "en-US-AriaNeural"       # English voice
 
-# Gemini model (brain) - v1 shohoj command ar v2 agent loop, dui jaygatei
-MODEL = "gemini-2.0-flash"
+# Gemini model (brain): code e ar kono fixed model er naam-e bharosha nai!
+# Program chalu howar somoy Google er kache jene ney ekhon kon kon
+# model sotti pawa jacche, tar theke pochonder list onujayi nijei
+# ekta beche ney (discover_model dekho). Google purono model bondho
+# kore dileo tai ar atkabe na. MODEL sudhu sesh bachar upay:
+# model er list-i jodi na ashe, ei naam tai chesta kora hobe.
+# Nije model bachai korte chaile .env file e GEMINI_MODEL=... dao.
+MODEL = "gemini-2.5-flash"
 
 # V2 AGENT LOOP SETTING:
 # Ekta boro kaje ekbare sorboccho koyta step chesta korbe
@@ -147,14 +153,92 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 gemini = None
 # v2 er chokh-wala agent (screenshot dekhe step by step kaj kore)
 agent_model = None
+# Gemini library (API key thakle niche setup er somoy import hoy)
+genai = None
 
-if API_KEY:
+# Pochonder model er list: oporer diker gula age try hobe
+MODEL_PREFERENCE = [
+    "gemini-3.8-flash", "gemini-3-flash", "gemini-3.0-flash",
+    "gemini-2.5-flash", "gemini-2.5-flash-lite",
+    "gemini-2.0-flash", "gemini-1.5-flash",
+]
+
+
+def choose_model(available_names, override):
+    """Pawa jacche emon model gular naam theke ekta beche ney.
+    1) .env te GEMINI_MODEL deya thakle ar seta pawa gele setai
+    2) pochonder list er prothom jeta pawa jacche
+    3) naam e 'flash' ache emon jekono model
+    4) list er prothom model. List faka hole None."""
+    if override and override in available_names:
+        return override
+    for name in MODEL_PREFERENCE:
+        if name in available_names:
+            return name
+    for name in available_names:
+        if "flash" in name:
+            return name
+    return available_names[0] if available_names else None
+
+
+def discover_model():
+    """Google er kache ekhon kon model gulo sotti pawa jacche,
+    list_models diye jene tar theke ekta beche ferot dey.
+    Jekono somossa hole static fallback (MODEL) ferot jay -
+    ei function nije kokhono error chure na."""
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=API_KEY)
-        gemini = genai.GenerativeModel(
-            MODEL,
-            system_instruction=(
+        names = []
+        for m in genai.list_models():
+            methods = getattr(m, "supported_generation_methods", None) or []
+            if "generateContent" in methods:
+                name = m.name or ""
+                if name.startswith("models/"):
+                    name = name[len("models/"):]
+                if name:
+                    names.append(name)
+        override = os.environ.get("GEMINI_MODEL", "").strip()
+        chosen = choose_model(names, override)
+        return chosen if chosen else MODEL
+    except Exception:
+        return MODEL
+
+
+def build_models(name):
+    """Deya naam er model diye planner + agent - duita brain-i
+    (notun kore) banay ar live global e bosiye dey."""
+    global gemini, agent_model
+    gemini = genai.GenerativeModel(name, system_instruction=PLANNER_INSTRUCTION)
+    agent_model = genai.GenerativeModel(name, system_instruction=AGENT_INSTRUCTION)
+
+
+def is_model_error(e):
+    """Model bondho hoye geche / pawa jacche na - ei dhoroner
+    error kina dekhe (quota error theke alada chinna joruri)."""
+    s = str(e).lower()
+    return "404" in s or "not found" in s or "no longer available" in s
+
+
+def generate_with_retry(kind, content):
+    """kind = 'planner' ba 'agent'. Model bondho hoye gele (404)
+    nijei notun model khuje niye EKbar abar try kore.
+    Quota error ager motoi opore chole jay."""
+    for attempt in (1, 2):
+        model = gemini if kind == "planner" else agent_model
+        try:
+            return model.generate_content(content)
+        except Exception as e:
+            if attempt == 1 and is_model_error(e):
+                print("🧠 Model bodle nicchi...")
+                try:
+                    build_models(discover_model())
+                except Exception:
+                    pass
+                continue
+            raise
+
+
+# v1 planner er system instruction (ki kore plan banabe)
+PLANNER_INSTRUCTION = (
                 "You are KUTU, a friendly and playful PC voice assistant. "
                 "Your owner is Antor. He speaks Bangla and English, mixed. "
                 "Reply in the SAME language he used (Bangla -> Bangla, English -> English). "
@@ -172,11 +256,10 @@ if API_KEY:
                 '- "exit" arg = "" (only when he says stop / goodbye / বিদায়)\n'
                 '- "agent" arg = his FULL request, word for word. Use "agent" for ANYTHING that needs multiple steps, clicking inside an app, ending a call, making/moving/deleting files or folders, filling a form, changing a setting, or ANY task not covered by the simple actions above. Examples: "Discord er call kete dao", "Downloads e movies folder banao", "Chrome e amar site kholo ar login page e jao", "screen e ki ache bolo" (describing the screen also needs the agent, because only the agent can see).\n'
                 '- "none" arg = "" for normal talk or questions (answer inside "say")\n'
-            ),
-        )
-        agent_model = genai.GenerativeModel(
-            MODEL,
-            system_instruction=(
+)
+
+# v2 agent er system instruction (screen dekhe ki kore kaj korbe)
+AGENT_INSTRUCTION = (
                 "You are KUTU, a PC agent controlling Antor's Windows PC. You can see his screen: "
                 "a screenshot is attached to every message. Antor speaks Bangla and English, mixed. "
                 "Your job: complete his goal step by step.\n\n"
@@ -205,8 +288,15 @@ if API_KEY:
                 "4. For ending a Discord voice call: look at the bottom-left voice panel and click the red disconnect (phone) button; or right-click the channel... try the visible disconnect button first.\n"
                 "5. NEVER type passwords, OTP or payment details. If a login window, CAPTCHA or Windows UAC/admin prompt blocks you, use 'done' and explain honestly.\n"
                 "6. If you are stuck after several different tries, use 'done' and say what failed. Do not loop the same failed click again and again.\n"
-            ),
-        )
+)
+
+if API_KEY:
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=API_KEY)
+        _chosen_model = discover_model()
+        build_models(_chosen_model)
+        print("🧠 Model:", _chosen_model)
     except Exception as e:
         print("Gemini setup e somossa:", e)
         gemini = None
@@ -902,7 +992,7 @@ def run_agent_loop(goal, intro=""):
             )
 
             try:
-                resp = agent_model.generate_content([prompt, part])
+                resp = generate_with_retry("agent", [prompt, part])
                 raw = resp.text or ""
             except Exception as e:
                 if is_quota_error(e):
@@ -1037,10 +1127,10 @@ def handle_command(command):
     plan = None
     if gemini is not None:
         try:
-            response = gemini.generate_content(command)
+            response = generate_with_retry("planner", command)
             plan = parse_plan(response.text or "")
         except Exception as e:
-            print("(Gemini error:", e, "- free quota sesh hote pare, ektu pore try koro)")
+            print("(Gemini error:", e, "- ektu pore try koro)")
             plan = None
 
     if plan is None:
