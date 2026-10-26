@@ -78,6 +78,30 @@ Porer din quota abar full hoye jay.
 
 ---
 
+## 🆕 v3 — Ekhon pura app er moto!
+
+Ekhon KUTU ekta **app window** te chole — protidin kalo console kholar dorkar nai!
+
+- 🖥️ **Desktop shortcut** — setup.bat Desktop e **"KUTU Agent"** name ekta shortcut
+  baniye dey (parrot icon soho). Shortcut na hole folder er **KUTU.bat**
+  double-click korlei hobe — kono kalo window asbe na.
+- 🦜 **Window te ja ja dekhte parba:** KUTU r chobi, boro kore **status**
+  (🟢 Shunchi… / 🤔 Bhabchi… / 🔊 Bolchi… / 🛠️ Kaj korchi… / ⚪ Theme achi),
+  tumi ki bolle (**Shunlam:**), KUTU ki bollo (**KUTU:**), ar niche **live log**.
+- ✅ **Self-check:** chalu howar somoy KUTU nijei check kore window te dekhiye
+  dey — API key ache kina, model ready kina, internet ache kina, mic thik
+  ache kina. Kono tay **❌** ashle bujhba somossa oi jaygay.
+- 🧠 **Session memory:** planner ekhon ager koyekta command mone rakhe —
+  tai "ar ekta chalao" jatiyo follow-up kotha ekhon bhalo bujhe.
+- 📄 **kutu.log:** program er sob print folder er `kutu.log` file e time soho
+  save hoy. Kono somossa hole **oi file ta KUTU ke pathiye dio** — dekhei
+  bole debe ki hoyeche.
+- ▶️ **Start / Stop button** diye window thekei chalu-bhondo kora jay.
+- Kalo console (purono style) chaile **run.bat** — ota ekhon debug mode,
+  kaj sob ek-i.
+
+---
+
 ## Setup — Step by Step (10 minute lagbe)
 
 ### Step 0: GitHub theke Download koro
@@ -122,13 +146,18 @@ Brain er jonno Google Gemini er ekta **free** key lagbe. Taka lage na!
 
 > 🔐 Key ta **karo sathe share koro na** — eta tomar personal key. GitHub eo eta kokhono upload hobe na (`.gitignore` diye atkano ache).
 
-### Step 4: run.bat chalao — KUTU jinda!
+### Step 4: KUTU chalu koro — KUTU jinda!
 
-1. **run.bat** double-click koro
-2. Window e KUTU greeting bolbe: *"Assalamu Alaikum Antor! Ami Kutu, ready achi."*
-3. Ekhon mic e bolo: **"Kutu, YouTube kholo"** 🎉
+1. Desktop er **KUTU Agent** shortcut double-click koro (setup baniye deyar kotha)
+   — shortcut na thakle project folder er **KUTU.bat** double-click koro
+2. Ekta **app window** khulbe — **▶️ Chalu koro (Start)** button ta chap dao
+3. Window e self-check er result (✅/❌) dekhabe, ar KUTU greeting bolbe:
+   *"Assalamu Alaikum Antor! Ami Kutu, ready achi."*
+4. Ekhon mic e bolo: **"Kutu, YouTube kholo"** 🎉
 
-Bondho korte: bolo **"Kutu, goodbye"** — othoba window ta cross (X) diye bondho kore dao.
+Bondho korte: window r **⏹️ Bondho koro (Stop)** button — othoba bolo **"Kutu, goodbye"**.
+
+> Debug korte chaile **run.bat** double-click kore kalo console mode eo chalano jay — kaj sob ek-i.
 
 ---
 
@@ -244,6 +273,14 @@ Ekhon kalo window te nijei dekha jay KUTU ki shunlo:
 ### ❌ Internet chara cholbe?
 Na. Voice shona (Google), bolа (edge-tts), ar brain (Gemini) — tintai online service. Internet lagbei.
 
+### ❌ App window khule na / majhe theme jay
+- Age **run.bat** diye chaliye dekho — kalo console e error ta porishkar dekhabe.
+- Jai hok, program er sob lekha **`kutu.log`** file e save hoy (program er folder ei paba,
+  proti line e time soho). Somossa bujhte na parle **oi `kutu.log` file ta KUTU ke pathiye
+  dao** — dekhei bole debe ki hoyeche. App window r nicheo ei kotha tai lekha ache.
+- Window khule kintu Start chap deoar por kichu hoy na? Self-check er line gula dekho —
+  ❌ wala tai somossa (key/internet/mic). Log box e bistarito lekha thakbe.
+
 ---
 
 ## File gula ki ki
@@ -251,8 +288,12 @@ Na. Voice shona (Google), bolа (edge-tts), ar brain (Gemini) — tintai online 
 | File | Kaj |
 |---|---|
 | `agent.py` | Asol program — sob kaj ekhanei |
-| `setup.bat` | Prothom bar double-click — sob install kore |
-| `run.bat` | Protidin double-click — KUTU chalu hoy |
+| `kutu_gui.py` | App window — status, log, Start/Stop button |
+| `KUTU.bat` | App window kholar launcher (Desktop shortcut etakei khule) |
+| `setup.bat` | Prothom bar double-click — sob install kore + shortcut banay |
+| `run.bat` | Kalo console (debug) mode e KUTU chalu hoy |
+| `kutu.png` / `kutu.ico` | KUTU r icon (window + shortcut er jonno) |
+| `kutu.log` | Program cholar somoy nije nije toiri hoy — sob print er log (somossa hole eta pathao) |
 | `.env` | Tomar secret API key (tumi banaba) |
 | `.env.example` | .env er khali copy |
 | `requirements.txt` | Library er list |

@@ -1,5 +1,5 @@
 # ============================================================
-#  KUTU PC Agent v2 - Tomar nijer voice assistant (Jarvis style)
+#  KUTU PC Agent v3 - Tomar nijer voice assistant (Jarvis style)
 #  Owner: Antor
 #  Bolbe "Kutu" -> shunbe -> kaj korbe -> mukhe jawab debe.
 #
@@ -7,6 +7,11 @@
 #  nije nije onek step er kaj korte pare (mouse, keyboard,
 #  shell, file). Jemon: "Discord er call ta kete dao",
 #  "Downloads e folder banao" - egulo ekhon somvob!
+#
+#  v3 te notun: app er moto window (kutu_gui.py / KUTU.bat),
+#  desktop shortcut, chalu howar somoy nijer self-check,
+#  sob print er log file (kutu.log), ar planner ekhon ager
+#  koyekta command mone rakhe (follow-up bujhte pare).
 #
 #  Change korte chaile beshir bhaag setting ei file er
 #  uporer CONFIG ongsho tei ache. Bhoy nai, venge jabe na!
@@ -18,12 +23,14 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
 import webbrowser
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +39,102 @@ try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+
+# ------------------ v3: GUI event + log file ------------------
+# GUI (kutu_gui.py) chaile EVENT_HOOK e nijer function bosiye dey -
+# tokhon status / heard / reply event gula window te pouchay.
+# Console mode e hook None thake, kichui hoy na.
+EVENT_HOOK = None
+
+# GUI mode e True hoy - tokhon listen() choto timeout use kore,
+# jate Stop button chap dile ~koyek second eri moddhe theme jay.
+GUI_MODE = False
+
+# Stop button (ba GUI bondho kora) eta True kore dile main loop
+# porer check-ei theme jabe.
+STOP_REQUESTED = False
+
+# Sesh self-check er result (GUI window dekhanor jonno)
+LAST_SELF_CHECK = []
+
+
+def emit(kind, text):
+    """GUI ke event pathay (hook thakle). Hook e error holeo
+    program er kichu hoy na - sob somoy safe."""
+    hook = EVENT_HOOK
+    if hook is None:
+        return
+    try:
+        hook(kind, text)
+    except Exception:
+        pass
+
+
+class _LogTee:
+    """stdout er lekha console-eo jay, abar kutu.log file-eo
+    jay (file e proti line er age [HH:MM:SS] time soho).
+    Logging jeno kokhono program crash na kore - sob try ghera."""
+
+    def __init__(self, primary, logfile):
+        self._primary = primary
+        self._logfile = logfile
+        self._buf = ""
+
+    @property
+    def encoding(self):
+        return getattr(self._primary, "encoding", None) or "utf-8"
+
+    def write(self, s):
+        try:
+            self._primary.write(s)
+        except Exception:
+            pass
+        try:
+            self._buf += s
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                stamp = datetime.now().strftime("%H:%M:%S")
+                self._logfile.write(f"[{stamp}] {line}\n")
+                self._logfile.flush()
+        except Exception:
+            pass
+        return len(s)
+
+    def flush(self):
+        for sink in (self._primary, self._logfile):
+            try:
+                sink.flush()
+            except Exception:
+                pass
+
+    def isatty(self):
+        try:
+            return self._primary.isatty()
+        except Exception:
+            return False
+
+
+def _install_log_tee():
+    """sys.stdout ke _LogTee diye wrap kore (ekbar-i hoy).
+    kutu.log 2MB er boro hole ager ta kutu_old.log hoye jay."""
+    if isinstance(sys.stdout, _LogTee):
+        return
+    try:
+        folder = os.path.dirname(os.path.abspath(__file__))
+        log_path = os.path.join(folder, "kutu.log")
+        try:
+            if (os.path.exists(log_path)
+                    and os.path.getsize(log_path) > 2 * 1024 * 1024):
+                old_path = os.path.join(folder, "kutu_old.log")
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+                os.replace(log_path, old_path)
+        except Exception:
+            pass
+        fh = open(log_path, "a", encoding="utf-8", errors="replace")
+        sys.stdout = _LogTee(sys.stdout, fh)
+    except Exception:
+        pass
 
 # ------------------ CONFIG (ekhane change koro) ------------------
 
@@ -183,6 +286,8 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 gemini = None
 # v2 er chokh-wala agent (screenshot dekhe step by step kaj kore)
 agent_model = None
+# Ekhon live thaka model er naam (self-check / GUI dekhanor jonno)
+CURRENT_MODEL = None
 # Gemini library (API key thakle niche setup er somoy import hoy)
 genai = None
 
@@ -236,9 +341,10 @@ def discover_model():
 def build_models(name):
     """Deya naam er model diye planner + agent - duita brain-i
     (notun kore) banay ar live global e bosiye dey."""
-    global gemini, agent_model
+    global gemini, agent_model, CURRENT_MODEL
     gemini = genai.GenerativeModel(name, system_instruction=PLANNER_INSTRUCTION)
     agent_model = genai.GenerativeModel(name, system_instruction=AGENT_INSTRUCTION)
+    CURRENT_MODEL = name
 
 
 def is_model_error(e):
@@ -290,6 +396,7 @@ PLANNER_INSTRUCTION = (
                 '- "exit" arg = "" (only when he says stop / goodbye / বিদায়)\n'
                 '- "agent" arg = his FULL request, word for word. Use "agent" for ANYTHING that needs multiple steps, clicking inside an app, ending a call, making/moving/deleting files or folders, filling a form, changing a setting, or ANY task not covered by the simple actions above. Examples: "Discord er call kete dao", "Downloads e movies folder banao", "Chrome e amar site kholo ar login page e jao", "screen e ki ache bolo" (describing the screen also needs the agent, because only the agent can see).\n'
                 '- "none" arg = "" for normal talk or questions (answer inside "say")\n'
+                "Recent conversation lines may precede the request - use them to resolve follow-ups like 'ar ekta' (one more).\n"
 )
 
 # v2 agent er system instruction (screen dekhe ki kore kaj korbe)
@@ -359,6 +466,8 @@ def play_mp3(filename):
 def speak(text):
     """Console e print kore + mukhe bole dey."""
     print("\nKUTU:", text)
+    emit("reply", text)
+    emit("status", "speaking")
     voice = VOICE_BN if has_bangla(text) else VOICE_EN
     filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_kutu_voice.mp3")
     try:
@@ -434,6 +543,61 @@ def print_input_devices():
     print("-------------------------------")
 
 
+def self_check():
+    """Chalu howar somoy 4 ta jinish nije check kore: API key,
+    model, internet, mic. Print kore ar list akare ferot dey
+    [(label, ok, detail), ...] - GUI window-o ei list tai dekhy.
+    Konokichutei crash kore na, sob check alada try diye ghera."""
+    global LAST_SELF_CHECK
+    results = []
+
+    # 1) API key ache kina
+    results.append(("API key", bool(API_KEY),
+                    "ache" if API_KEY else "nai - .env file e key boshao"))
+
+    # 2) Brain (model) ready kina
+    if gemini is not None and CURRENT_MODEL:
+        results.append(("Model", True, CURRENT_MODEL))
+    else:
+        results.append(("Model", False,
+                        "ready hoy ni - API key / internet dekho"))
+
+    # 3) Internet - Google DNS (8.8.8.8:53) e choto socket check
+    try:
+        conn = socket.create_connection(("8.8.8.8", 53), timeout=2)
+        conn.close()
+        results.append(("Internet", True, "connected"))
+    except Exception as e:
+        results.append(("Internet", False,
+                        f"connection hoy ni ({str(e)[:50]})"))
+
+    # 4) Mic: default device er naam + 0.3 sec er awaz sample
+    # (stream khullei ok - level 0 howa mane na mic kharap,
+    #  ghor chup thakle level 0-i thake)
+    try:
+        dev_name = "?"
+        try:
+            idx = sd.default.device[0]
+            if idx is not None and idx >= 0:
+                dev_name = sd.query_devices(idx).get("name", "?")
+        except Exception:
+            pass
+        rec = sd.rec(int(0.3 * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+                     channels=1, dtype="int16")
+        sd.wait()
+        level = _frame_rms(rec)
+        results.append(("Microphone", True,
+                        f"{dev_name} (awaz level: {int(level)})"))
+    except Exception as e:
+        results.append(("Microphone", False,
+                        f"mic khola jay ni ({str(e)[:50]})"))
+
+    for label, ok, detail in results:
+        print(("✅ " if ok else "❌ ") + f"{label} — {detail}")
+    LAST_SELF_CHECK = results
+    return results
+
+
 def record_phrase(timeout=6, phrase_limit=8):
     """Mic theke ekta phrase record kore sr.AudioData ferot dey.
     Niyom ager recognizer.listen() er motoi:
@@ -491,20 +655,35 @@ def listen(timeout=6, phrase_limit=8):
         return None
     if audio is None:
         return None
+    text = None
     try:
         text = recognizer.recognize_google(audio, language=LANG)
-        # Ki shunlam seta console e dekhai - screenshot dekhlei bujha jabe
-        print(f'🎧 Shunlam: "{text}"')
-        return text
     except sr.UnknownValueError:
-        # Phrase record hoyeche kintu kotha bujha jay ni
-        # (pure silence timeout hole audio None thake, ekhane ashe na)
-        print("🎧 (kotha bujhlam na)")
-        return None
+        # Prothom bar bujha jay ni - poriskar English command
+        # bn-BD te majhe majhe miss hoy, tai ar ekbar en-US
+        # diye try kori, tarporeo na hole hobe na
+        if LANG != "en-US":
+            try:
+                text = recognizer.recognize_google(audio, language="en-US")
+            except sr.UnknownValueError:
+                text = None
+            except sr.RequestError:
+                print("Internet nai mone hoy - voice shona jacche na.")
+                time.sleep(2)
+                return None
     except sr.RequestError:
         print("Internet nai mone hoy - voice shona jacche na.")
         time.sleep(2)
         return None
+    if not text:
+        # Phrase record hoyeche kintu kotha bujha jay ni
+        # (pure silence timeout hole audio None thake, ekhane ashe na)
+        print("🎧 (kotha bujhlam na)")
+        return None
+    # Ki shunlam seta console e dekhai - screenshot dekhlei bujha jabe
+    print(f'🎧 Shunlam: "{text}"')
+    emit("heard", text)
+    return text
 
 # ------------------ Kaj kora (v1 shohoj actions) ------------------
 
@@ -1012,6 +1191,10 @@ def run_agent_loop(goal, intro=""):
 
     try:
         for step in range(1, MAX_STEPS + 1):
+            if STOP_REQUESTED:
+                print("(Stop bola hoyeche - agent kaj majhkhanei thamiye dilo)")
+                return
+            emit("status", "working")
             part, _size = get_screen_image()
             if part is None:
                 speak("Screen er chobi nite parlam na Antor.")
@@ -1026,6 +1209,7 @@ def run_agent_loop(goal, intro=""):
             )
 
             try:
+                emit("status", "thinking")
                 resp = generate_with_retry("agent", [prompt, part])
                 raw = resp.text or ""
             except Exception as e:
@@ -1135,6 +1319,27 @@ def parse_plan(raw):
     return {"say": raw.strip()[:200] if raw else "", "action": "none", "arg": ""}
 
 
+# Planner er choto session memory: sesh koyekta command ar tar
+# plan mone rakhe - follow-up ("ar ekta", "ota kholo") bujhte
+# help kore. Program bondho hole vule jay, chinta nai.
+PLANNER_HISTORY = deque(maxlen=6)
+
+
+def build_planner_content(command):
+    """Planner ke pathanor request text banay: age r command
+    gular choto history (thakle) + ekhonkar command ta.
+    History na thakle sudhu command tai jay (ager motoi)."""
+    if not PLANNER_HISTORY:
+        return command
+    lines = []
+    for h in PLANNER_HISTORY:
+        line = (f"Antor: {h.get('cmd', '')}  ->  KUTU plan: "
+                f"{h.get('action', '')} ({h.get('say', '')})")
+        lines.append(line.rstrip())
+    return ("Recent conversation:\n" + "\n".join(lines)
+            + f"\n\nNow Antor said: {command}")
+
+
 def _match_tokens(command):
     """Fast-path er matching er jonno command ke token e vange
     (Latin ongsho lowercase, biroti-chinho soriye)."""
@@ -1238,9 +1443,14 @@ def handle_command(command):
     if plan is None and gemini is not None:
         try:
             print("(Gemini ke jiggesh korchi...)")
-            response = generate_with_retry("planner", command)
+            emit("status", "thinking")
+            response = generate_with_retry("planner",
+                                           build_planner_content(command))
             plan = parse_plan(response.text or "")
             print(f"(Plan: {plan['action']} {plan['arg'][:60]})")
+            PLANNER_HISTORY.append({"cmd": command,
+                                    "action": plan["action"],
+                                    "say": plan["say"]})
         except Exception as e:
             print("(Gemini error:", e, "- ektu pore try koro)")
             plan = None
@@ -1305,8 +1515,12 @@ def find_command(text):
 
 
 def main():
+    # Sob print ekhon theke kutu.log file-eo jabe (somossa hole
+    # debugging er jonno) - console e jemon chilo temni thakbe
+    _install_log_tee()
+
     print("=" * 55)
-    print("   KUTU PC AGENT v2 - Antor er voice assistant")
+    print("   KUTU PC AGENT v3 - Antor er voice assistant")
     print("=" * 55)
 
     if not API_KEY or gemini is None:
@@ -1316,11 +1530,22 @@ def main():
         print("2) ei folder er .env file khule GEMINI_API_KEY= er pore paste koro")
         print("3) tarpor abar run.bat chalao")
         print()
-        input("Bondho korte Enter chap dao...")
+        if not GUI_MODE:
+            try:
+                input("Bondho korte Enter chap dao...")
+            except Exception:
+                pass
         return
 
     # Kon mic use hocche seta shurutei dekhiye dei (debug er jonno)
     print_input_devices()
+
+    # Nijer health check (key / model / internet / mic) -
+    # fail holeo program theme jabe na
+    try:
+        self_check()
+    except Exception as e:
+        print("(Self-check holo na:", e, ")")
 
     # Mic er noise mapano (ekbar, shurute)
     try:
@@ -1328,7 +1553,11 @@ def main():
         noise = calibrate_noise(duration=0.6)
     except Exception:
         print("Microphone pawa jay ni! Mic connect kore abar chalao.")
-        input("Bondho korte Enter chap dao...")
+        if not GUI_MODE:
+            try:
+                input("Bondho korte Enter chap dao...")
+            except Exception:
+                pass
         return
 
     # Noise 0 hole voyer kichu nai: onek mic array ghor ekdom chup
@@ -1343,22 +1572,40 @@ def main():
 
     try:
         while True:
-            text = listen(timeout=None, phrase_limit=5)
-            if not text:
-                continue
-            command = find_command(text)
-            if command is None:
-                continue  # wake word sara kotha ignore
-            print("\n[Jaglam!] Shunlam:", text)
-            if command == "":
-                speak("জি Antor, bolo?")
-                command = listen(timeout=8, phrase_limit=10)
-                if not command:
-                    continue
-            if not handle_command(command):
+            if STOP_REQUESTED:
+                print("(Stop bola hoyeche - KUTU theme gelo)")
                 break
+            try:
+                emit("status", "listening")
+                # GUI mode e choto timeout: Stop chap dile loop
+                # ghure eshe flag dekhe theme jabe. Console mode
+                # ager motoi - jotokkhon kotha na ashe wait kore.
+                text = listen(timeout=(3 if GUI_MODE else None),
+                              phrase_limit=5)
+                if not text:
+                    continue
+                command = find_command(text)
+                if command is None:
+                    continue  # wake word sara kotha ignore
+                print("\n[Jaglam!] Shunlam:", text)
+                if command == "":
+                    speak("জি Antor, bolo?")
+                    emit("status", "listening")
+                    command = listen(timeout=8, phrase_limit=10)
+                    if not command:
+                        continue
+                if not handle_command(command):
+                    break
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                # Watchdog: ekta command e crash holeo KUTU
+                # more jabe na - abar shunte thakbe
+                print("(Ekta somossa hoise:", e, "- abar shunchi...)")
+                time.sleep(1)
     except KeyboardInterrupt:
         print("\n(Ctrl+C chap deya hoyeche - KUTU bondho hocche)")
+    emit("status", "idle")
 
 
 if __name__ == "__main__":

@@ -82,6 +82,15 @@ if not exist ".env" (
     copy .env.example .env >nul
 )
 
+REM ---- Icon + Desktop shortcut (v3) ----
+REM Ekhane kichu fail holeo setup theme jabe na - shortcut
+REM charao KUTU.bat double-click korlei app khulbe.
+echo [3/3] Icon ar Desktop shortcut banano hocche...
+python -c "import base64,os,importlib.util; s=importlib.util.find_spec('icon_data'); open('kutu.png','wb').write(base64.b64decode(__import__('icon_data').PNG_B64)) if s and not os.path.exists('kutu.png') else None" 2>nul
+python -c "import os; from PIL import Image; Image.open('kutu.png').save('kutu.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)]) if os.path.exists('kutu.png') else None" 2>nul
+powershell -NoProfile -Command "$d=[Environment]::GetFolderPath('Desktop'); $w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($d+'\KUTU Agent.lnk'); $s.TargetPath='%~dp0KUTU.bat'; $s.WorkingDirectory='%~dp0'; if (Test-Path '%~dp0kutu.ico') { $s.IconLocation='%~dp0kutu.ico' }; $s.Description='KUTU Agent'; $s.Save()" 2>nul
+echo (Shortcut na holeo somossa nai - KUTU.bat double-click korlei cholbe)
+
 echo.
 echo ===================================================
 echo    SETUP SESH!
@@ -91,6 +100,7 @@ echo Ekhon ekta kaj baki:
 echo   1. aistudio.google.com theke FREE Gemini API key nao
 echo   2. ei folder er ".env" file ta Notepad diye kholo
 echo   3. GEMINI_API_KEY= er pore key ta paste kore Save koro
-echo   4. tarpor "run.bat" double-click korlei KUTU chalu!
+echo   4. tarpor Desktop er "KUTU Agent" shortcut (ba ei folder er KUTU.bat) double-click korlei KUTU chalu!
+echo      (Kalo console e dekhte chaile run.bat diyeo chalano jay)
 echo.
 pause
