@@ -170,15 +170,18 @@ Age **"Kutu"** bole jagate hobe — na jagale se kichu shunbe na (eta iccha kore
 Python install koro ni, othoba install er somoy **"Add python.exe to PATH"** tick dao ni.
 Python abar install koro, ebar tick diye. Tarpor setup.bat abar chalao.
 
-### ❌ PyAudio install fail (lal error)
-Aage ekbar abar setup.bat chaliye dekho — onek somoy second try te hoye jay.
-Na hole Command Prompt khule (project folder e) ei gula ekta ekta kore chalao:
-```
-venv\Scripts\activate
-pip install pipwin
-pipwin install pyaudio
-```
-Tarpor abar `setup.bat` chalao.
+### ❌ Prothom setup majhkhane theme gesilo? (purono pygame / PyAudio error)
+Chinta nai — notun version e oi problem tai thik kore deya hoyeche. Ekhon mic ar
+speaker er library gula **ready-made (wheel)** — kichui compile hobe na, tai
+**notun Python (3.14) eo setup arame cholbe**.
+
+Thik korar step:
+1. GitHub theke **notun ZIP** ta download koro ar **ager folder er upor-ei Extract (overwrite)** koro.
+   Tomar `.env` file (jekhane API key ache) ZIP er vitore nai — tai ota muche jabe na,
+   jemon chilo thik temon-i thakbe.
+2. Chaile folder er vitore `venv` folder ta delete kore dao.
+   (Na korleo cholbe — notun setup.bat adha-setup er purono venv nijei muche notun kore banay.)
+3. Abar **setup.bat** double-click koro — ebar "SETUP SESH!" porjonto jabe.
 
 ### ❌ "GEMINI_API_KEY pawa jay ni"
 `.env` file e key bosau ni, othoba save koro ni. Step 3 abar dekho.

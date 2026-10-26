@@ -18,6 +18,15 @@ if errorlevel 1 (
 )
 
 REM ---- Virtual environment banano ----
+REM Ager bar setup majhkhane fail hole venv er vitore adha-install
+REM library thakte pare. Sofol setup er marker (venv\.kutu-ok) na
+REM thakle purono venv ta muche ekdom notun kore banano hoy.
+if exist "venv" (
+    if not exist "venv\.kutu-ok" (
+        echo [INFO] Ager adha-setup er venv pawa geche - muche notun kore banacchi...
+        rmdir /s /q venv
+    )
+)
 if not exist "venv" (
     echo [1/3] Virtual environment banano hocche...
     python -m venv venv
@@ -27,13 +36,17 @@ REM ---- Library install ----
 echo [2/3] Library install hocche... (internet lagbe, ektu wait koro)
 call venv\Scripts\activate.bat
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install --only-binary :all: -r requirements.txt
 if errorlevel 1 (
     echo.
     echo [WARNING] Kichu library install hoy ni.
-    echo Bises kore PyAudio fail hole README r Troubleshooting ongsho dekho.
+    echo Uporer error ta dekho, ar README r Troubleshooting ongsho dekho.
+    echo Tarpor abar setup.bat chalao.
     echo.
+    pause
+    exit /b 1
 )
+echo ok> venv\.kutu-ok
 
 REM ---- .env file banano ----
 if not exist ".env" (

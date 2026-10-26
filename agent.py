@@ -106,9 +106,16 @@ except ImportError:
 
 try:
     import edge_tts
-    import pygame
 except ImportError:
-    print("edge-tts / pygame library nai. Age setup.bat chalao!")
+    print("edge-tts library nai. Age setup.bat chalao!")
+    sys.exit(1)
+
+try:
+    import numpy as np
+    import sounddevice as sd
+    import soundfile as sf
+except ImportError:
+    print("sounddevice / soundfile library nai (mic + speaker er jonno lage). Age setup.bat chalao!")
     sys.exit(1)
 
 try:
@@ -208,6 +215,14 @@ async def _make_mp3(text, voice, filename):
     await tts.save(filename)
 
 
+def play_mp3(filename):
+    """MP3 file ta speaker e bajay (soundfile + sounddevice diye).
+    File er nijer sample-rate ar mono/stereo onujayei bajbe."""
+    data, rate = sf.read(filename, dtype="float32")
+    sd.play(data, rate)
+    sd.wait()
+
+
 def speak(text):
     """Console e print kore + mukhe bole dey."""
     print("\nKUTU:", text)
@@ -215,31 +230,107 @@ def speak(text):
     filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_kutu_voice.mp3")
     try:
         asyncio.run(_make_mp3(text, voice, filename))
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        pygame.mixer.music.load(filename)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            time.sleep(0.1)
-        pygame.mixer.music.unload()
+        play_mp3(filename)
     except Exception as e:
         print("(Voice cholche na, internet ache kina dekho. Error:", e, ")")
 
 # ------------------ Shona (microphone) ------------------
+# Mic diye record kore sounddevice (PyAudio lage na!),
+# tarpor Google diye text e convert kore SpeechRecognition.
 
 recognizer = sr.Recognizer()
+
+# Mic er setting: 16kHz, mono, 100 millisecond er choto frame kore shuni
+SAMPLE_RATE = 16000
+FRAME_SAMPLES = 1600          # 100ms @ 16kHz
+SAMPLE_WIDTH = 2              # int16 = 2 byte
+# Frame er energy (RMS) er beshi hole "kotha bolche" dhora hoy.
+# Shurute calibrate_noise() ghore r normal awaz mepe eta thik kore ney.
+ENERGY_THRESHOLD = 300
+SILENCE_SECONDS = 0.9         # kotha seshe etokkhon chup = phrase sesh
+
+
+def _frame_rms(frame):
+    """Ekta choto audio frame er jore-awaz (RMS) hishab kore."""
+    arr = np.asarray(frame, dtype=np.float32).reshape(-1)
+    if arr.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(arr * arr)))
+
+
+def calibrate_noise(duration=0.6):
+    """Shurute ghore r faka awaz mepe ENERGY_THRESHOLD set kore.
+    (Ager adjust_for_ambient_noise er motoi kaj, sudhu sounddevice diye.)
+    Mic na pele exception uthbe - main() seta dhore nebo."""
+    global ENERGY_THRESHOLD
+    frames_needed = max(1, int(duration * SAMPLE_RATE / FRAME_SAMPLES))
+    vals = []
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                        dtype="int16", blocksize=FRAME_SAMPLES) as stream:
+        for _ in range(frames_needed):
+            data, _overflowed = stream.read(FRAME_SAMPLES)
+            vals.append(_frame_rms(data))
+    noise = float(np.median(vals)) if vals else 0.0
+    ENERGY_THRESHOLD = int(min(2500, max(120, noise * 3)))
+    print(f"(Mic ready - ghore r noise: {int(noise)}, threshold: {ENERGY_THRESHOLD})")
+
+
+def record_phrase(timeout=6, phrase_limit=8):
+    """Mic theke ekta phrase record kore sr.AudioData ferot dey.
+    Niyom ager recognizer.listen() er motoi:
+      timeout      = kotha SURU howar jonno koto second opekkha (None = jotokkhon lage)
+      phrase_limit = ekta phrase sorboccho koto second lomba hobe
+      kotha seshe ~0.9 second chup thaklei phrase sesh.
+    Kotha suru-e na hole None ferot dey."""
+    chunks = []        # record howa audio r tukra (bytes)
+    pre_roll = []      # kotha suru howar thik ager ~0.3s (prothom shobdo jeno kete na jay)
+    started = False
+    silent_frames = 0
+    waited = 0.0
+    silence_limit = int(SILENCE_SECONDS * SAMPLE_RATE / FRAME_SAMPLES)
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                        dtype="int16", blocksize=FRAME_SAMPLES) as stream:
+        while True:
+            data, _overflowed = stream.read(FRAME_SAMPLES)
+            raw = np.asarray(data, dtype=np.int16).reshape(-1).tobytes()
+            loud = _frame_rms(data) > ENERGY_THRESHOLD
+            if not started:
+                pre_roll.append(raw)
+                if len(pre_roll) > 3:
+                    pre_roll.pop(0)
+                if loud:
+                    started = True
+                    chunks = list(pre_roll)
+                    pre_roll = []
+                else:
+                    waited += FRAME_SAMPLES / SAMPLE_RATE
+                    if timeout is not None and waited >= timeout:
+                        return None
+            else:
+                chunks.append(raw)
+                if loud:
+                    silent_frames = 0
+                else:
+                    silent_frames += 1
+                    if silent_frames >= silence_limit:
+                        break
+                if len(chunks) * FRAME_SAMPLES / SAMPLE_RATE >= phrase_limit:
+                    break
+    if not chunks:
+        return None
+    return sr.AudioData(b"".join(chunks), SAMPLE_RATE, SAMPLE_WIDTH)
 
 
 def listen(timeout=6, phrase_limit=8):
     """Mic theke shone, lekha (text) ferot dey. Na bujhle None."""
     try:
-        with sr.Microphone() as mic:
-            audio = recognizer.listen(mic, timeout=timeout, phrase_time_limit=phrase_limit)
-    except sr.WaitTimeoutError:
-        return None
-    except OSError:
+        audio = record_phrase(timeout=timeout, phrase_limit=phrase_limit)
+    except Exception:
+        # Mic na pawa / permission nai (sounddevice PortAudioError ekhane ashe)
         print("Microphone pawa jacche na! Mic lagano ache kina / permission dekho.")
         time.sleep(2)
+        return None
+    if audio is None:
         return None
     try:
         text = recognizer.recognize_google(audio, language=LANG)
@@ -977,10 +1068,9 @@ def main():
 
     # Mic er noise mapano (ekbar, shurute)
     try:
-        with sr.Microphone() as mic:
-            print("Mic thik kora hocche... 1 second chup thako...")
-            recognizer.adjust_for_ambient_noise(mic, duration=1)
-    except OSError:
+        print("Mic thik kora hocche... 1 second chup thako...")
+        calibrate_noise(duration=0.6)
+    except Exception:
         print("Microphone pawa jay ni! Mic connect kore abar chalao.")
         input("Bondho korte Enter chap dao...")
         return
