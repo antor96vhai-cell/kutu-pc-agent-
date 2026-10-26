@@ -96,6 +96,36 @@ APPS = {
     "visual studio code": ("exe", "code"),
 }
 
+# Local fast-path: app er naam kivabe kivabe shona jay.
+# (canonical naam = APPS er key, jeta open_app bujhe)
+APP_ALIASES = {
+    "youtube":    ["youtube", "ইউটিউব"],
+    "whatsapp":   ["whatsapp", "হোয়াটসঅ্যাপ", "হোয়াটস অ্যাপ"],
+    "facebook":   ["facebook", "ফেসবুক"],
+    "instagram":  ["instagram", "ইনস্টাগ্রাম", "ইন্সটাগ্রাম"],
+    "gmail":      ["gmail", "জিমেইল", "মেইল"],
+    "google":     ["google", "গুগল"],
+    "discord":    ["discord", "ডিসকর্ড"],
+    "spotify":    ["spotify", "স্পটিফাই"],
+    "telegram":   ["telegram", "টেলিগ্রাম"],
+    "messenger":  ["messenger", "মেসেঞ্জার"],
+    "chrome":     ["chrome", "ক্রোম"],
+    "notepad":    ["notepad", "নোটপ্যাড"],
+    "calculator": ["calculator", "ক্যালকুলেটর"],
+    "explorer":   ["explorer", "ফাইল", "file explorer"],
+}
+
+# 'Kholo / chalu koro' jatiyo kotha (token er age mille o hobe,
+# jemon ওপেনিং -> ওপেন)
+OPEN_INTENT = ["open", "ওপেন", "খোলো", "খোল", "খুল", "খুলে",
+               "চালাও", "চালু", "চালা", "khol", "chalao", "start"]
+
+# Command theke baad deya tukro kotha
+FAST_FILLERS = {"the", "টা", "টি", "app", "অ্যাপ", "please"}
+
+# YouTube e kichu chalate chaile ei kotha gula baad diye baki tai search
+YOUTUBE_PLAY_FILLERS = {"গান", "ভিডিও", "video", "song", "play"}
+
 # App bondho korar somoy kon app er process er naam ki.
 # (Task Manager e je naam dekho, setai)
 CLOSE_APP_NAMES = {
@@ -221,11 +251,15 @@ def is_model_error(e):
 def generate_with_retry(kind, content):
     """kind = 'planner' ba 'agent'. Model bondho hoye gele (404)
     nijei notun model khuje niye EKbar abar try kore.
-    Quota error ager motoi opore chole jay."""
+    Quota error ager motoi opore chole jay.
+    Proti call e timeout ache (planner 45s, agent 90s) - Gemini
+    atke gele program o atke thakbe na, error hoye ber hoye asbe."""
     for attempt in (1, 2):
         model = gemini if kind == "planner" else agent_model
+        timeout = 45 if kind == "planner" else 90
         try:
-            return model.generate_content(content)
+            return model.generate_content(
+                content, request_options={"timeout": timeout})
         except Exception as e:
             if attempt == 1 and is_model_error(e):
                 print("🧠 Model bodle nicchi...")
@@ -1101,16 +1135,88 @@ def parse_plan(raw):
     return {"say": raw.strip()[:200] if raw else "", "action": "none", "arg": ""}
 
 
-def local_fallback(command):
-    """Gemini na thakle / fail korle shohoj keyword diye kaj.
-    Plan ferot dey, nahoy None."""
+def _match_tokens(command):
+    """Fast-path er matching er jonno command ke token e vange
+    (Latin ongsho lowercase, biroti-chinho soriye)."""
+    cleaned = command.lower()
+    for p in "।,.?!:;":
+        cleaned = cleaned.replace(p, " ")
+    return cleaned.split()
+
+
+def _is_intent_token(tok):
+    """Token ta 'kholo / chalu koro' jatiyo kotha kina.
+    Prefix milleo hobe (ওপেনিং -> ওপেন)."""
+    return any(tok == w or tok.startswith(w) for w in OPEN_INTENT)
+
+
+def local_fast_path(command):
+    """Gemini ke jiggesh korar AGE-i local-e shohoj kaj chine ney -
+    tai common command e Gemini r jonno boshe thakte hoy na,
+    net/model er somossa thakleo kaj hoy. Plan ferot dey,
+    nahoy None (tokhon Gemini planner dekhbe)."""
     low = command.lower()
+
+    # Ager local_fallback er kaj: time / date / screenshot / volume
     if "time" in low or "সময়" in command or "কয়টা" in command:
         return {"say": "", "action": "time", "arg": ""}
     if "date" in low or "তারিখ" in command:
         return {"say": "", "action": "date", "arg": ""}
     if "screenshot" in low or "স্ক্রিনশট" in command:
         return {"say": "", "action": "screenshot", "arg": ""}
+    if "volume" in low or "ভলিউম" in command or "শব্দ" in command:
+        if "down" in low or "কমা" in command:
+            return {"say": "", "action": "volume_down", "arg": ""}
+        if "up" in low or "বাড়া" in command:
+            return {"say": "", "action": "volume_up", "arg": ""}
+    if "mute" in low or "মিউট" in command:
+        return {"say": "", "action": "mute", "arg": ""}
+
+    tokens = _match_tokens(command)
+
+    # Command e jana kon app er alias ache kina khuje
+    # (token mile ba token er age alias mile - jemon ইউটিউবে)
+    canonical = None
+    alias_pos = set()
+    for i, tok in enumerate(tokens):
+        if i + 1 < len(tokens):
+            pair = tok + " " + tokens[i + 1]
+            for canon, aliases in APP_ALIASES.items():
+                if pair in aliases:
+                    canonical, alias_pos = canon, {i, i + 1}
+                    break
+            if canonical:
+                break
+        for canon, aliases in APP_ALIASES.items():
+            if any(" " not in a and (tok == a or tok.startswith(a))
+                   for a in aliases):
+                canonical, alias_pos = canon, {i}
+                break
+        if canonical:
+            break
+    if canonical is None:
+        return None
+
+    # Alias + 'kholo' jatiyo kotha + tukro kotha baad diye ja baki thake
+    rest = [t for j, t in enumerate(tokens)
+            if j not in alias_pos
+            and not _is_intent_token(t)
+            and t not in FAST_FILLERS]
+
+    if not rest:
+        # Command chilo sudhu app er naam (ar hoyto 'kholo' jatiyo
+        # kotha) - app tai khule dao. "Sudhu naam bolleo khulo."
+        return {"say": "", "action": "open_app", "arg": canonical}
+
+    if canonical == "youtube":
+        leftover = [t for t in rest if t not in YOUTUBE_PLAY_FILLERS]
+        if leftover:
+            return {"say": "", "action": "youtube_play",
+                    "arg": " ".join(leftover)}
+        return {"say": "", "action": "open_app", "arg": "youtube"}
+
+    # Onno app + baki kotha mane kajer command (jemon "Discord khule
+    # call kete dao") - oita Gemini planner / agent er kaj.
     return None
 
 
@@ -1124,17 +1230,21 @@ def handle_command(command):
         speak("ঠিক আছে Antor, বিদায়! Abar dorkar hole dak dio.")
         return False
 
-    plan = None
-    if gemini is not None:
+    # Age local fast-path: common kaj Gemini charai sathe sathe hoy
+    plan = local_fast_path(command)
+    if plan is not None:
+        print(f"(Local-ei kore dilam: {plan['action']} {plan['arg']})")
+
+    if plan is None and gemini is not None:
         try:
+            print("(Gemini ke jiggesh korchi...)")
             response = generate_with_retry("planner", command)
             plan = parse_plan(response.text or "")
+            print(f"(Plan: {plan['action']} {plan['arg'][:60]})")
         except Exception as e:
             print("(Gemini error:", e, "- ektu pore try koro)")
             plan = None
 
-    if plan is None:
-        plan = local_fallback(command)
     if plan is None:
         speak("দুঃখিত Antor, ekhon bujhte parlam na. Internet ba API key ta check koro.")
         return True

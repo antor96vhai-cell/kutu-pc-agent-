@@ -202,6 +202,12 @@ Google kokhono purono model bondho kore dile KUTU nijei notun model
 bechhe nibe (kalo window te `🧠 Model:` line e kon model cholche dekha jay).
 Code e kichu bodlate hobe na.
 
+### ❌ Command diye atke thake / kichu hoy na
+Notun version e common kaj (YouTube/app khola, time, screenshot, volume)
+**local-ei** hoye jay — Gemini lagena. Baki command eo Gemini r jonno
+sorboccho 45 second wait kore, tarpore nijei chara peye jay —
+age r moto jhule thake na.
+
 ### ❌ Mic shune na / kichu bole na
 
 Ekhon kalo window te nijei dekha jay KUTU ki shunlo:
