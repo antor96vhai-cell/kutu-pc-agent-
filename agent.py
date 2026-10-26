@@ -39,8 +39,17 @@ except Exception:
 # "en-US" = English. Bangla bolle bn-BD e best kaj kore.
 LANG = "bn-BD"
 
-# Kon kon shobdo shunle Kutu jagbe (wake word)
-WAKE_WORDS = ["kutu", "hey kutu", "কুতু", "হে কুতু"]
+# Kon shobdo shunle Kutu jagbe (wake word). Recognizer "Kutu" ke
+# majhe majhe "কুটুক" / "কটু" emon bhul likhe fele, tai ekhane
+# shudhu asol nam na - jana bhul-roop gulor stem-o rakha ache.
+# Kono token egulor jekono ekta diye shuru holei wake word dhora hobe.
+WAKE_STEMS = [
+    "কুতু", "কুটু", "কুটুক", "কুতুক", "কটু", "কুট", "কুত",
+    "kutu", "kutuk", "kotu", "kuto", "cutu", "kootu", "kuttu",
+]
+
+# Wake word er thik age thakte pare emon filler shobdo
+WAKE_FILLERS = ["hey", "হে", "ও", "oi", "ঐ"]
 
 # Voice (mukhe jawab dewar gola)
 VOICE_BN = "bn-BD-NabanitaNeural"   # Bangla meye voice
@@ -1069,16 +1078,29 @@ def handle_command(command):
 
 # ------------------ Main loop ------------------
 
+def _is_wake_token(tok):
+    """Ekta token wake word (ba tar jana bhul-roop) kina dekhe."""
+    return any(tok == s or tok.startswith(s) for s in WAKE_STEMS)
+
+
 def find_command(text):
-    """Wake word ache kina dekhe; thakle porer ongsho (command) ferot dey.
-    Wake word thakleo command na thakle '' ferot dey. Na thakle None."""
-    low = text.lower()
-    for w in WAKE_WORDS:
-        wl = w.lower()
-        idx = low.find(wl)
-        if idx != -1:
-            rest = text[idx + len(w):].strip(" ,.!?-")
-            return rest
+    """Kotha wake word diye shuru hole porer ongsho (command) ferot dey.
+    Wake word thakleo command na thakle '' ferot dey. Na thakle None.
+    Prothom token tai wake word hote hobe; tar age ekta filler
+    (hey / হে / ও / oi / ঐ) thakle shetao khule neya hoy."""
+    if not text:
+        return None
+    cleaned = text.lower()
+    for p in "।,.?!:;":
+        cleaned = cleaned.replace(p, " ")
+    tokens = cleaned.split()
+    if not tokens:
+        return None
+    i = 0
+    if tokens[0] in WAKE_FILLERS:
+        i = 1
+    if i < len(tokens) and _is_wake_token(tokens[i]):
+        return " ".join(tokens[i + 1:])
     return None
 
 
@@ -1109,25 +1131,13 @@ def main():
         input("Bondho korte Enter chap dao...")
         return
 
-    # Noise 0 (ba pray 0) mane mic theke kono signal-i asche na:
-    # hoy bhul input device select hoye ache, na hoy Windows er
-    # mic privacy setting desktop app ke block koreche.
+    # Noise 0 hole voyer kichu nai: onek mic array ghor ekdom chup
+    # thakle silence ke noise-gate kore digital 0 dekhay - mic tokhono
+    # dibbi kaj korte pare. Tai boro warning box er bodle ekta chhoto
+    # note-i jothesto (ager boro box ta mic thik thakleo ashto).
     if noise is not None and noise < 1:
         print()
-        print("=" * 55)
-        print("!! MIC WARNING: Mic theke kono signal asche na !!")
-        print("=" * 55)
-        print("Ei gula check koro:")
-        print("  1) Windows Settings -> Privacy & security -> Microphone")
-        print('     -> "Microphone access" ar "Let desktop apps access')
-        print('        your microphone" - dutoi ON koro')
-        print("  2) Settings -> System -> Sound -> Input e giye")
-        print("     tomar ASOL mic ta select koro (uporer list e ⭐ wala")
-        print("     tai default) - ar kotha bolle Test bar nore kina dekho")
-        print("  3) Laptop er Fn + mic-mute key chaap poreche kina dekho")
-        print("Settings thik kore run.bat abar chalalei hobe.")
-        print("=" * 55)
-        speak("Mic e awaz pacchi na, settings check koro.")
+        print("(Note: ghor ekdom chup thakay noise 0 dekhacche — eta hote pare normal. Mic kaj na korle: '🎧 Shunlam' line ashe kina dekho; na ashle README r mic troubleshooting dekho.)")
 
     speak("আসসালামু আলাইকুম Antor! Ami Kutu, ready achi. Amake daklei hobe.")
 

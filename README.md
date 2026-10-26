@@ -1,7 +1,7 @@
 # 🤖 KUTU PC Agent
 
 Tomar nijer voice assistant — reels e je rokom **Max / Nova agent** dekho, thik oirokom!
-Mic e bolba **"Kutu"** — se jagbe, tomar kotha shunbe, kaj korbe, ar mukhe jawab debe.
+Mic e bolba **"Kutu"** — se jagbe, tomar kotha shunbe, kaj korbe, ar mukhe jawab debe. (Recognizer majhe majhe "Kutu" ke "কুটুক" / "কটু" emon shune — shegulo bolleo jagbe, chinta nai.)
 Bangla ar English — dui tai bujhe. Owner: **Antor**.
 
 ---
