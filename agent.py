@@ -273,6 +273,32 @@ def calibrate_noise(duration=0.6):
     noise = float(np.median(vals)) if vals else 0.0
     ENERGY_THRESHOLD = int(min(2500, max(120, noise * 3)))
     print(f"(Mic ready - ghore r noise: {int(noise)}, threshold: {ENERGY_THRESHOLD})")
+    return noise
+
+
+def print_input_devices():
+    """Startup e sob mic (input) device er list print kore, jate
+    screenshot dekhlei bujha jay kon mic ta use hocche.
+    Windows er default input device er pashe ⭐ mark thakbe."""
+    print("\n--- Mic (input) device list ---")
+    try:
+        default_in = sd.default.device[0]
+    except Exception:
+        default_in = -1
+    try:
+        devices = sd.query_devices()
+    except Exception as e:
+        print("(Device list pawa gelo na:", e, ")")
+        return
+    found = False
+    for i, dev in enumerate(devices):
+        if dev.get("max_input_channels", 0) > 0:
+            found = True
+            mark = " ⭐ (default)" if i == default_in else ""
+            print(f"  [{i}] {dev.get('name', '?')}{mark}")
+    if not found:
+        print("  (Kono mic device-i pawa gelo na!)")
+    print("-------------------------------")
 
 
 def record_phrase(timeout=6, phrase_limit=8):
@@ -334,8 +360,13 @@ def listen(timeout=6, phrase_limit=8):
         return None
     try:
         text = recognizer.recognize_google(audio, language=LANG)
+        # Ki shunlam seta console e dekhai - screenshot dekhlei bujha jabe
+        print(f'🎧 Shunlam: "{text}"')
         return text
     except sr.UnknownValueError:
+        # Phrase record hoyeche kintu kotha bujha jay ni
+        # (pure silence timeout hole audio None thake, ekhane ashe na)
+        print("🎧 (kotha bujhlam na)")
         return None
     except sr.RequestError:
         print("Internet nai mone hoy - voice shona jacche na.")
@@ -1066,14 +1097,37 @@ def main():
         input("Bondho korte Enter chap dao...")
         return
 
+    # Kon mic use hocche seta shurutei dekhiye dei (debug er jonno)
+    print_input_devices()
+
     # Mic er noise mapano (ekbar, shurute)
     try:
         print("Mic thik kora hocche... 1 second chup thako...")
-        calibrate_noise(duration=0.6)
+        noise = calibrate_noise(duration=0.6)
     except Exception:
         print("Microphone pawa jay ni! Mic connect kore abar chalao.")
         input("Bondho korte Enter chap dao...")
         return
+
+    # Noise 0 (ba pray 0) mane mic theke kono signal-i asche na:
+    # hoy bhul input device select hoye ache, na hoy Windows er
+    # mic privacy setting desktop app ke block koreche.
+    if noise is not None and noise < 1:
+        print()
+        print("=" * 55)
+        print("!! MIC WARNING: Mic theke kono signal asche na !!")
+        print("=" * 55)
+        print("Ei gula check koro:")
+        print("  1) Windows Settings -> Privacy & security -> Microphone")
+        print('     -> "Microphone access" ar "Let desktop apps access')
+        print('        your microphone" - dutoi ON koro')
+        print("  2) Settings -> System -> Sound -> Input e giye")
+        print("     tomar ASOL mic ta select koro (uporer list e ⭐ wala")
+        print("     tai default) - ar kotha bolle Test bar nore kina dekho")
+        print("  3) Laptop er Fn + mic-mute key chaap poreche kina dekho")
+        print("Settings thik kore run.bat abar chalalei hobe.")
+        print("=" * 55)
+        speak("Mic e awaz pacchi na, settings check koro.")
 
     speak("আসসালামু আলাইকুম Antor! Ami Kutu, ready achi. Amake daklei hobe.")
 

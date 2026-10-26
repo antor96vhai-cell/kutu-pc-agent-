@@ -197,8 +197,35 @@ Free key te protidin ekta limit thake. Sesh hoye gele **porer din** abar hobe.
 Beshi use korle aistudio.google.com theke notun key baniye nite paro.
 
 ### ❌ Mic shune na / kichu bole na
-- Windows Settings → Privacy & security → Microphone → **On** ache kina dekho
-- Mic ta default device kina dekho (Settings → System → Sound)
+
+Ekhon kalo window te nijei dekha jay KUTU ki shunlo:
+
+- `🎧 Shunlam: "..."` — ei line asha mane mic kaj korche, KUTU tomar kotha
+  shuneche. Ei line-tai na ashle bujhba mic thekei awaz dhukche na.
+- `🎧 (kotha bujhlam na)` — awaz hoyeche, kintu kotha clear bujha jay ni.
+  Mic er kache giye ektu poriskar kore bolo.
+- Program chalu howar somoy **mic device er list** print hoy — jekhane **⭐**
+  mark ache setai Windows er default mic. Screenshot pathale oi list dekhei
+  bujha jabe kon mic ta select hoye ache.
+- `(Mic ready - ghore r noise: 0, ...)` — **noise 0** mane mic theke **kono
+  signal-i asche na** (puro digital silence). Mic lagano thakleo emon hoy
+  jokhon Windows bhul input device select kore rakhe, othoba **mic privacy
+  setting** diye desktop app er mic access bondho thake. Niche r 2 ta
+  check koro:
+
+**Check 1 — Windows mic privacy (sobcheye common karon):**
+1. Settings → **Privacy & security** → **Microphone**
+2. **"Microphone access"** → **On** koro
+3. **"Let desktop apps access your microphone"** → **On** koro
+
+**Check 2 — Thik mic ta default select kora ache kina:**
+1. Settings → **System** → **Sound** → **Input**
+2. List theke tomar **asol mic** ta select koro (laptop er built-in mic /
+   headphone er mic)
+3. Oikhane mic test er ekta **bar** ache — kotha bolle bar ta **norbe**.
+   Bar na norle bujhba oi device diye awaz dhukche na, onno mic select koro
+
+- Laptop er **Fn + mic-mute** key chaap poreche kinao dekho (kichu laptop e thake)
 - Chupchap jaygay bolo, mic er kache bolo
 - Speaker/headphone er volume on ache kina dekho
 
