@@ -1,0 +1,13 @@
+# Python virtual environment (setup.bat banay)
+venv/
+
+# Tomar secret API key - eta kokhono GitHub e jabe na
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Voice er temp file
+*.mp3
+_kutu_voice.mp3
