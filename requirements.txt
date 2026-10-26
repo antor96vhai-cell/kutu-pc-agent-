@@ -2,7 +2,6 @@ SpeechRecognition
 edge-tts
 google-generativeai
 python-dotenv
-pyautogui
 Pillow
 sounddevice
 soundfile

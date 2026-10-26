@@ -36,10 +36,38 @@ REM ---- Library install ----
 echo [2/3] Library install hocche... (internet lagbe, ektu wait koro)
 call venv\Scripts\activate.bat
 python -m pip install --upgrade pip
+
+REM Step A: requirements.txt er sob library ready-made wheel theke
 pip install --only-binary :all: -r requirements.txt
 if errorlevel 1 (
     echo.
     echo [WARNING] Kichu library install hoy ni.
+    echo Uporer error ta dekho, ar README r Troubleshooting ongsho dekho.
+    echo Tarpor abar setup.bat chalao.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Step B: PyAutoGUI r kono wheel nai - eta sdist thekei install hoy.
+REM Chinta nai, eta pure Python, compile kichu lage na.
+echo [2/3] PyAutoGUI install hocche... (eta alada step)
+pip install pyautogui
+if errorlevel 1 (
+    echo.
+    echo [WARNING] PyAutoGUI install hoy ni.
+    echo Internet connection check kore abar setup.bat chalao.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM ---- Sob library sotti sotti kaj kore kina verify ----
+echo [2/3] Library gula check hocche...
+python -c "import pyautogui, sounddevice, soundfile, speech_recognition, edge_tts, google.generativeai, dotenv, PIL"
+if errorlevel 1 (
+    echo.
+    echo [WARNING] Library install holeo kichu ekta thik moto kaj korche na.
     echo Uporer error ta dekho, ar README r Troubleshooting ongsho dekho.
     echo Tarpor abar setup.bat chalao.
     echo.

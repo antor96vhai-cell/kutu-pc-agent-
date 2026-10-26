@@ -183,6 +183,11 @@ Thik korar step:
    (Na korleo cholbe — notun setup.bat adha-setup er purono venv nijei muche notun kore banay.)
 3. Abar **setup.bat** double-click koro — ebar "SETUP SESH!" porjonto jabe.
 
+### ❌ setup.bat e "pyautogui" step e error ashle
+PyAutoGUI library tar kono ready-made wheel nai — tai setup.bat e ota **alada ekta
+step e** (Step B) install hoy. Chinta nai, eta pure Python, compile kichu lage na.
+Step B fail korle internet connection ta check kore **setup.bat abar chalao**.
+
 ### ❌ "GEMINI_API_KEY pawa jay ni"
 `.env` file e key bosau ni, othoba save koro ni. Step 3 abar dekho.
 File er naam sudhu `.env` hote hobe — `env.txt` hole cholbe na!
