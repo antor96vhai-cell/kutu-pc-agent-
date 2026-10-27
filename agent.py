@@ -1,5 +1,5 @@
 # ============================================================
-#  KUTU PC Agent v3.1 - Tomar nijer voice assistant (Jarvis style)
+#  KUTU PC Agent v3.1.1 - Tomar nijer voice assistant (Jarvis style)
 #  Owner: Antor
 #  Bolbe "Kutu" -> shunbe -> kaj korbe -> mukhe jawab debe.
 #
@@ -17,6 +17,12 @@
 #  (chat box - wake word lage na, voice er pasapashi chole),
 #  ar Bangla/English bhasha select korar option ache
 #  (choice settings.json e save thake).
+#
+#  v3.1.1 te notun: model sudhu list dekhe bechhe ney na -
+#  chalu howar somoy sotti kore choto ekta call diye TEST
+#  kore jeta uttor dey setai ney (list e thekeo onek model
+#  call e 504 deadline mare - Antor er PC te dhora porechilo).
+#  504/timeout hole nijei onno model e bodle abar try kore.
 #
 #  Change korte chaile beshir bhaag setting ei file er
 #  uporer CONFIG ongsho tei ache. Bhoy nai, venge jabe na!
@@ -255,10 +261,13 @@ def phrase(key):
 
 # Gemini model (brain): code e ar kono fixed model er naam-e bharosha nai!
 # Program chalu howar somoy Google er kache jene ney ekhon kon kon
-# model sotti pawa jacche, tar theke pochonder list onujayi nijei
-# ekta beche ney (discover_model dekho). Google purono model bondho
-# kore dileo tai ar atkabe na. MODEL sudhu sesh bachar upay:
-# model er list-i jodi na ashe, ei naam tai chesta kora hobe.
+# model sotti pawa jacche, tar theke pochonder list onujayi candidate
+# sajay (discover_candidates dekho), tarpor prottekti ke live call
+# diye TEST kore jeta uttor dey setai ney (select_working_model
+# dekho) - list e thekeo call e more jawa model ebar dhora pore.
+# Google purono model bondho kore dileo tai ar atkabe na. MODEL
+# sudhu sesh bachar upay: model er list-i jodi na ashe, ei naam
+# tai chesta kora hobe.
 # Nije model bachai korte chaile .env file e GEMINI_MODEL=... dao.
 MODEL = "gemini-2.5-flash"
 
@@ -284,6 +293,7 @@ APPS = {
     "messenger":  ("url", "https://www.messenger.com"),
     "spotify":    ("url", "https://open.spotify.com"),
     "telegram":   ("url", "https://web.telegram.org"),
+    "twitter":    ("url", "https://x.com"),
     "github":     ("url", "https://github.com"),
     "chrome":     ("exe", "chrome.exe"),
     "notepad":    ("exe", "notepad.exe"),
@@ -306,6 +316,7 @@ APP_ALIASES = {
     "discord":    ["discord", "ডিসকর্ড"],
     "spotify":    ["spotify", "স্পটিফাই"],
     "telegram":   ["telegram", "টেলিগ্রাম"],
+    "twitter":    ["twitter", "twiter", "টুইটার"],
     "messenger":  ["messenger", "মেসেঞ্জার"],
     "chrome":     ["chrome", "ক্রোম"],
     "notepad":    ["notepad", "নোটপ্যাড"],
@@ -319,7 +330,14 @@ OPEN_INTENT = ["open", "ওপেন", "খোলো", "খোল", "খুল",
                "চালাও", "চালু", "চালা", "khol", "chalao", "start"]
 
 # Command theke baad deya tukro kotha
-FAST_FILLERS = {"the", "টা", "টি", "app", "অ্যাপ", "please"}
+FAST_FILLERS = {"the", "টা", "টি", "app", "অ্যাপ", "please",
+                "my", "আমার", "on", "in"}
+
+# Domain (jemon kick.com) chinbar jonno sesh ongsho gula.
+# Note: _match_tokens "." soriye dey bole tokenized command e
+# domain jora hoye ashe ("google" + "com") - local_fast_path
+# oi jora miliye domain ber kore.
+DOMAIN_TLDS = {"com", "net", "org", "io", "bd", "xyz", "tv"}
 
 # YouTube e kichu chalate chaile ei kotha gula baad diye baki tai search
 YOUTUBE_PLAY_FILLERS = {"গান", "ভিডিও", "video", "song", "play"}
@@ -416,26 +434,61 @@ def choose_model(available_names, override):
     return available_names[0] if available_names else None
 
 
+def _available_model_names():
+    """list_models diye ekhon pawa jacche ar generateContent
+    pare - emon model gular naam er list ferot dey.
+    list_models fail korle exception uthbe - dhorar dayitto
+    jara call kore tader."""
+    names = []
+    for m in genai.list_models():
+        methods = getattr(m, "supported_generation_methods", None) or []
+        if "generateContent" in methods:
+            name = m.name or ""
+            if name.startswith("models/"):
+                name = name[len("models/"):]
+            if name:
+                names.append(name)
+    return names
+
+
 def discover_model():
     """Google er kache ekhon kon model gulo sotti pawa jacche,
     list_models diye jene tar theke ekta beche ferot dey.
     Jekono somossa hole static fallback (MODEL) ferot jay -
     ei function nije kokhono error chure na."""
     try:
-        names = []
-        for m in genai.list_models():
-            methods = getattr(m, "supported_generation_methods", None) or []
-            if "generateContent" in methods:
-                name = m.name or ""
-                if name.startswith("models/"):
-                    name = name[len("models/"):]
-                if name:
-                    names.append(name)
+        names = _available_model_names()
         override = os.environ.get("GEMINI_MODEL", "").strip()
         chosen = choose_model(names, override)
         return chosen if chosen else MODEL
     except Exception:
         return MODEL
+
+
+def discover_candidates():
+    """Test korar jonno model gular naam pochonder krome
+    sajiye dey: 1) .env r GEMINI_MODEL (list e thakle)
+    2) pochonder list (MODEL_PREFERENCE) 3) naam e 'flash'
+    ache emon baki gula 4) baki sob model.
+    list_models fail korle faka list ferot jay."""
+    try:
+        names = _available_model_names()
+    except Exception:
+        return []
+    ordered = []
+    override = os.environ.get("GEMINI_MODEL", "").strip()
+    if override and override in names:
+        ordered.append(override)
+    for name in MODEL_PREFERENCE:
+        if name in names and name not in ordered:
+            ordered.append(name)
+    for name in names:
+        if "flash" in name and name not in ordered:
+            ordered.append(name)
+    for name in names:
+        if name not in ordered:
+            ordered.append(name)
+    return ordered
 
 
 def build_models(name):
@@ -454,10 +507,80 @@ def is_model_error(e):
     return "404" in s or "not found" in s or "no longer available" in s
 
 
+def is_timeout_error(e):
+    """Deadline / timeout jatiyo error kina (504). Model bondho
+    (404) er motoi ei khetre-o onno model try kora uchit -
+    ek model er server slow hole arekta diye hoye jete pare.
+    Quota (429) ei list e nai - seta model bodle labh nai,
+    generate_with_retry seta ager motoi opore pathiye dey."""
+    s = str(e).lower()
+    return ("504" in s or "deadline" in s
+            or "timed out" in s or "timeout" in s)
+
+
+# Model test (ping) call er timeout (second).
+# Unit test chaile eta choto kore nite pare.
+PING_TIMEOUT = 20
+
+# Startup e kono model-i live test e pass na korle True thake
+# (chinno: brain durbol - shohoj local command cholbe, chat /
+# boro kaj nao hote pare). Pass korle False.
+MODEL_UNVERIFIED = False
+
+
+def select_working_model(exclude=None):
+    """Sotti kore kaj kore emon model bechhe ney.
+
+    Sudhu list_models e naam thaklei hoy na (Antor er PC te
+    gemini-3.8-flash list e chilo, kintu prottek generate call
+    504 deadline e mere jeto). Tai prothom 4 ta candidate ke
+    ekta kore choto live call ("Reply with just: OK") diye
+    test kora hoy - jeta sotti uttor dey setai brain hoy.
+
+    exclude = baad deya model er naam er set (mid-run recovery
+    te jeta fail koreche seta baad diye khuje). Baad diye
+    kichu na thakle full list thekei khujbe.
+
+    Keo test e pass na korle prothom candidate tai rakha hoy
+    (program cholbe, shohoj command local-e emnitei hoy) ar
+    MODEL_UNVERIFIED=True kore dey. Ferot: chosen model naam."""
+    global MODEL_UNVERIFIED
+    if genai is None:
+        return MODEL
+    exclude = set(exclude or [])
+    candidates = discover_candidates()
+    usable = [c for c in candidates if c not in exclude] or candidates
+    if not usable:
+        usable = [MODEL]
+    for name in usable[:4]:
+        try:
+            probe = genai.GenerativeModel(name)
+            probe.generate_content(
+                "Reply with just: OK",
+                request_options={"timeout": PING_TIMEOUT})
+        except Exception:
+            print(f"(Model {name} kaj korlo na — porer ta try korchi...)")
+            continue
+        build_models(name)
+        MODEL_UNVERIFIED = False
+        print(f"🧠 Model: {name} (test OK)")
+        return name
+    fallback = usable[0]
+    try:
+        build_models(fallback)
+    except Exception:
+        pass
+    MODEL_UNVERIFIED = True
+    print("⚠️ Kono model test e pass korlo na — chat/complex kaj nao hote pare, shohoj command cholbe.")
+    return fallback
+
+
 def generate_with_retry(kind, content):
     """kind = 'planner' ba 'agent'. Model bondho hoye gele (404)
-    nijei notun model khuje niye EKbar abar try kore.
-    Quota error ager motoi opore chole jay.
+    ba deadline/timeout (504) e atke gele nijei arekta kaj-kora
+    model khuje (select_working_model) EKbar abar try kore.
+    Fail kora model ta baad diye khuje, jate ekoi model abar
+    na ashe. Quota error ager motoi opore chole jay.
     Proti call e timeout ache (planner 45s, agent 90s) - Gemini
     atke gele program o atke thakbe na, error hoye ber hoye asbe."""
     for attempt in (1, 2):
@@ -467,10 +590,11 @@ def generate_with_retry(kind, content):
             return model.generate_content(
                 content, request_options={"timeout": timeout})
         except Exception as e:
-            if attempt == 1 and is_model_error(e):
+            if attempt == 1 and (is_model_error(e) or is_timeout_error(e)):
                 print("🧠 Model bodle nicchi...")
                 try:
-                    build_models(discover_model())
+                    select_working_model(
+                        exclude={CURRENT_MODEL} if CURRENT_MODEL else None)
                 except Exception:
                     pass
                 continue
@@ -535,9 +659,10 @@ if API_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=API_KEY)
-        _chosen_model = discover_model()
-        build_models(_chosen_model)
-        print("🧠 Model:", _chosen_model)
+        # Sudhu list dekhe biswas na - live test e pass kora
+        # model tai brain hobe (select_working_model nijei
+        # "🧠 Model: ..." line print kore)
+        _chosen_model = select_working_model()
     except Exception as e:
         print("Gemini setup e somossa:", e)
         gemini = None
@@ -938,6 +1063,14 @@ def run_action(action, arg):
     """v1: Gemini r deya shohoj action ta sotti kore kore. True/False ferot dey."""
     if action == "open_app":
         return open_app(arg)
+    if action == "open_url":
+        # Local fast-path r domain rule theke ashe ("open
+        # kick.com") - soja browser e URL ta khule dey
+        try:
+            webbrowser.open(arg)
+            return True
+        except Exception:
+            return False
     if action == "youtube_play":
         return youtube_play(arg)
     if action == "google_search":
@@ -1503,12 +1636,34 @@ def local_fast_path(command):
 
     tokens = _match_tokens(command)
 
+    # Domain jora age theke chinhe rakhi: _match_tokens "." soriye
+    # dey bole "google.com" token list e "google" + "com" hoye
+    # ashe. Domain er position gula alada rakhte hobe - na hole
+    # "open discord on google.com" e 'google' app hishebe dhora
+    # porto, ar domain er tukro leftover e theke jeto.
+    domain_pos = set()
+    domain_found = None
+    for i in range(len(tokens) - 1):
+        label = tokens[i]
+        if (tokens[i + 1] in DOMAIN_TLDS
+                and re.fullmatch(r"[a-z0-9-]+", label)
+                and not _is_intent_token(label)
+                and label not in FAST_FILLERS):
+            start = i - 1 if i > 0 and tokens[i - 1] == "www" else i
+            domain_pos.update(range(start, i + 2))
+            if domain_found is None:
+                domain_found = label + "." + tokens[i + 1]
+
     # Command e jana kon app er alias ache kina khuje
-    # (token mile ba token er age alias mile - jemon ইউটিউবে)
+    # (token mile ba token er age alias mile - jemon ইউটিউবে).
+    # Domain er bhitore thaka token alias na (google.com er
+    # 'google' app google na).
     canonical = None
     alias_pos = set()
     for i, tok in enumerate(tokens):
-        if i + 1 < len(tokens):
+        if i in domain_pos:
+            continue
+        if i + 1 < len(tokens) and (i + 1) not in domain_pos:
             pair = tok + " " + tokens[i + 1]
             for canon, aliases in APP_ALIASES.items():
                 if pair in aliases:
@@ -1523,14 +1678,35 @@ def local_fast_path(command):
                 break
         if canonical:
             break
+
     if canonical is None:
+        # Domain rule: 'kholo' jatiyo kotha + ekta khali domain
+        # (jemon "open kick.com") - soja oi site tai khule dao.
+        if domain_found:
+            others = [t for j, t in enumerate(tokens)
+                      if j not in domain_pos
+                      and not _is_intent_token(t)
+                      and t not in FAST_FILLERS]
+            has_intent = any(_is_intent_token(t) for t in tokens)
+            if not others and has_intent:
+                return {"say": "", "action": "open_url",
+                        "arg": "https://" + domain_found}
         return None
 
-    # Alias + 'kholo' jatiyo kotha + tukro kotha baad diye ja baki thake
+    # "chrome" / "browser" sudhu tokhoni filler, jokhon TARGET
+    # onno ekta app ("open youtube on chrome" = youtube-i khulo).
+    # Nije chrome khulte chaile oigulai asol naam - filler na.
+    extra_fillers = ({"chrome", "browser", "ক্রোম"}
+                     if canonical != "chrome" else set())
+
+    # Alias + 'kholo' jatiyo kotha + tukro kotha + domain baad
+    # diye ja baki thake
     rest = [t for j, t in enumerate(tokens)
             if j not in alias_pos
+            and j not in domain_pos
             and not _is_intent_token(t)
-            and t not in FAST_FILLERS]
+            and t not in FAST_FILLERS
+            and t not in extra_fillers]
 
     if not rest:
         # Command chilo sudhu app er naam (ar hoyto 'kholo' jatiyo
@@ -1674,7 +1850,7 @@ def main():
     load_settings()
 
     print("=" * 55)
-    print("   KUTU PC AGENT v3.1 - Antor er voice assistant")
+    print("   KUTU PC AGENT v3.1.1 - Antor er voice assistant")
     print("=" * 55)
 
     if not API_KEY or gemini is None:

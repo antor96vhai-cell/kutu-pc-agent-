@@ -237,6 +237,16 @@ Google kokhono purono model bondho kore dile KUTU nijei notun model
 bechhe nibe (kalo window te `🧠 Model:` line e kon model cholche dekha jay).
 Code e kichu bodlate hobe na.
 
+### ❌ Model list e ache, kintu chat e jawab ashe na (504 / deadline error)
+Notun version (v3.1.1) e KUTU sudhu model er list dekhei biswas kore na —
+chalu howar somoy prottek candidate model ke **sotti kore ekta choto call
+diye test** kore, jeta uttor dey setai ney (`🧠 Model: ... (test OK)` line
+dekhlei bujhba test pass koreche). Majhe majhe kono model 504 deadline e
+atke gele KUTU nijei onno model e bodle abar try kore. Ekantoi sob model
+test e fail korle `⚠️ Kono model test e pass korlo na` line asbe — tokhon
+o shohoj command (app khola, time, screenshot) cholbe, sudhu chat / boro
+kaj nao hote pare; internet connection check kore program ta abar chalao.
+
 ### ❌ Command diye atke thake / kichu hoy na
 Notun version e common kaj (YouTube/app khola, time, screenshot, volume)
 **local-ei** hoye jay — Gemini lagena. Baki command eo Gemini r jonno
