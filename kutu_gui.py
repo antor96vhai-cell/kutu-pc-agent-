@@ -105,8 +105,8 @@ class KutuApp:
         self._icon_photo = None
 
         root.title("KUTU Agent")
-        root.geometry("560x720")
-        root.minsize(520, 640)
+        root.geometry("560x660")
+        root.minsize(520, 600)
         root.configure(bg=BG)
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -122,20 +122,20 @@ class KutuApp:
 
         # ---- Uporer ongsho: parrot + status ----
         top = tk.Frame(root, bg=BG)
-        top.pack(fill="x", padx=12, pady=(12, 4))
+        top.pack(fill="x", padx=12, pady=(8, 2))
 
         img_label = tk.Label(top, bg=BG)
         if png and Image is not None:
             try:
                 im = Image.open(png).convert("RGBA")
-                im.thumbnail((140, 140), Image.LANCZOS)
+                im.thumbnail((110, 110), Image.LANCZOS)
                 self._photo = ImageTk.PhotoImage(im)
             except Exception:
                 self._photo = None
         if self._photo is None and png:
             try:
                 ph = tk.PhotoImage(file=png)
-                self._photo = ph.subsample(2, 2)  # 256px -> ~128px
+                self._photo = ph.zoom(3, 3).subsample(7, 7)  # 256px -> ~110px
             except Exception:
                 self._photo = None
         if self._photo is not None:
@@ -165,7 +165,7 @@ class KutuApp:
 
         # ---- Self-check er result ----
         check_frame = tk.Frame(root, bg=BG)
-        check_frame.pack(fill="x", padx=12, pady=(8, 0))
+        check_frame.pack(fill="x", padx=12, pady=(6, 0))
         tk.Label(check_frame, text="Self-check:", bg=BG, fg=FG_DIM,
                  font=("Segoe UI", 10, "bold")).pack(anchor="w")
         self.check_label = tk.Label(
@@ -173,25 +173,10 @@ class KutuApp:
             fg=FG, justify="left", anchor="w", font=("Consolas", 10))
         self.check_label.pack(anchor="w")
 
-        # ---- Log box ----
-        log_frame = tk.Frame(root, bg=BG)
-        log_frame.pack(fill="both", expand=True, padx=12, pady=(8, 4))
-        tk.Label(log_frame, text="Log:", bg=BG, fg=FG_DIM,
-                 font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        inner = tk.Frame(log_frame, bg=BG)
-        inner.pack(fill="both", expand=True)
-        self.log_text = tk.Text(
-            inner, wrap="word", bg=BG_DARK, fg="#d6deeb",
-            insertbackground="#ffffff", font=("Consolas", 10),
-            state="disabled", relief="flat")
-        scroll = tk.Scrollbar(inner, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=scroll.set)
-        self.log_text.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
-        # ---- Button ----
+        # ---- Button (bottom e pin - log er AGE pack kori, jeno
+        # window choto holeo button kokhono baire na jay) ----
         btn_frame = tk.Frame(root, bg=BG)
-        btn_frame.pack(fill="x", padx=12, pady=(2, 2))
+        btn_frame.pack(side="bottom", fill="x", padx=12, pady=(2, 8))
         self.start_btn = tk.Button(
             btn_frame, text="▶️  Chalu koro (Start)", command=self.start,
             bg=BTN_BG, fg=FG, activebackground="#3a4152",
@@ -205,9 +190,27 @@ class KutuApp:
             relief="flat", padx=14, pady=6, state="disabled")
         self.stop_btn.pack(side="left", padx=(10, 0))
 
+        # Note ta button er thik upore - bottom zone ei pack kori
         tk.Label(root, text="Somossa hole kutu.log file ta KUTU ke pathao",
                  bg=BG, fg=FG_DIM, font=("Segoe UI", 9)).pack(
-                     pady=(2, 10))
+                     side="bottom", pady=(4, 0))
+
+        # ---- Log box (majher baki jayga joto tuku thake) ----
+        log_frame = tk.Frame(root, bg=BG)
+        log_frame.pack(fill="both", expand=True, padx=12, pady=(6, 4))
+        tk.Label(log_frame, text="Log:", bg=BG, fg=FG_DIM,
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        inner = tk.Frame(log_frame, bg=BG)
+        inner.pack(fill="both", expand=True)
+        self.log_text = tk.Text(
+            inner, wrap="word", bg=BG_DARK, fg="#d6deeb",
+            insertbackground="#ffffff", font=("Consolas", 10),
+            height=10,
+            state="disabled", relief="flat")
+        scroll = tk.Scrollbar(inner, command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scroll.set)
+        self.log_text.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
 
         self.root.after(100, self._poll)
 
