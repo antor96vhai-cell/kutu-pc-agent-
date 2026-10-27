@@ -1,8 +1,10 @@
 # ============================================================
-#  KUTU Agent - App Window (v3)
+#  KUTU Agent - App Window (v3.1)
 #  KUTU.bat / Desktop shortcut diye khule. Asol program
 #  (agent.py) ekta alada thread e chole - ei window ta
 #  holo tar mukh: status, shona kotha, jawab, ar sob log.
+#  v3.1: niche chat box (type koreo command deya jay) ar
+#  Bangla/English language select korar option ache.
 #
 #  Console chara chole (pythonw) - tai sob print ei window
 #  er log box e ashe, abar kutu.log file-eo save hoy.
@@ -48,7 +50,7 @@ sys.stdout = _writer
 sys.stderr = _writer
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 try:
     from PIL import Image, ImageTk
@@ -163,6 +165,21 @@ class KutuApp:
             justify="left", font=("Segoe UI", 11))
         self.reply_label.pack(fill="x", pady=(2, 0))
 
+        # ---- Language select (Bangla / English) ----
+        # Bodla bodli sathe sathe-i kaj kore, restart lage na;
+        # choice ta agent settings.json e save kore rakhe.
+        lang_frame = tk.Frame(top, bg=BG)
+        lang_frame.pack(fill="x", pady=(6, 0))
+        tk.Label(lang_frame, text="🌐 Language:", bg=BG, fg=FG_DIM,
+                 font=("Segoe UI", 10)).pack(side="left")
+        self.lang_combo = ttk.Combobox(
+            lang_frame, values=["Bangla", "English"], state="readonly",
+            width=12, font=("Segoe UI", 10))
+        self.lang_combo.set("English" if agent.LANG == "en" else "Bangla")
+        self.lang_combo.pack(side="left", padx=(6, 0))
+        self.lang_combo.bind("<<ComboboxSelected>>",
+                             self._on_lang_change)
+
         # ---- Self-check er result ----
         check_frame = tk.Frame(root, bg=BG)
         check_frame.pack(fill="x", padx=12, pady=(6, 0))
@@ -173,10 +190,29 @@ class KutuApp:
             fg=FG, justify="left", anchor="w", font=("Consolas", 10))
         self.check_label.pack(anchor="w")
 
+        # ---- Chat box (bottom zone er sobar niche - tai
+        # bottom theke PROTHOM pack kori; type koreo command
+        # deya jay, voice er pasapashi, wake word lage na) ----
+        chat_frame = tk.Frame(root, bg=BG)
+        chat_frame.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
+        self.chat_entry = tk.Entry(
+            chat_frame, bg=BG_DARK, fg=FG,
+            insertbackground="#ffffff", font=("Segoe UI", 11),
+            relief="flat")
+        self.chat_entry.pack(side="left", fill="x", expand=True,
+                             ipady=5)
+        self.chat_entry.bind("<Return>", lambda _e: self._send_chat())
+        self.send_btn = tk.Button(
+            chat_frame, text="📨 Pathao", command=self._send_chat,
+            bg=BTN_BG, fg=FG, activebackground="#3a4152",
+            activeforeground=FG, font=("Segoe UI", 11, "bold"),
+            relief="flat", padx=12, pady=5)
+        self.send_btn.pack(side="left", padx=(8, 0))
+
         # ---- Button (bottom e pin - log er AGE pack kori, jeno
         # window choto holeo button kokhono baire na jay) ----
         btn_frame = tk.Frame(root, bg=BG)
-        btn_frame.pack(side="bottom", fill="x", padx=12, pady=(2, 8))
+        btn_frame.pack(side="bottom", fill="x", padx=12, pady=(2, 2))
         self.start_btn = tk.Button(
             btn_frame, text="▶️  Chalu koro (Start)", command=self.start,
             bg=BTN_BG, fg=FG, activebackground="#3a4152",
@@ -241,6 +277,39 @@ class KutuApp:
     def stop(self):
         agent.STOP_REQUESTED = True
         self.status_label.configure(text="⏹️ Thamchi…")
+
+    # ---------------- Chat + language ----------------
+
+    def _send_chat(self):
+        """Chat box er lekha command hishebe pathai. Agent
+        na cholle age chalu kore nei; asol kaj ta alada
+        thread e hoy (Tk thread kokhono atke na)."""
+        try:
+            text = self.chat_entry.get().strip()
+        except Exception:
+            return
+        if not text:
+            return
+        self.chat_entry.delete(0, "end")
+        if self.thread is None or not self.thread.is_alive():
+            self.start()
+        threading.Thread(target=self._run_typed, args=(text,),
+                         daemon=True).start()
+
+    def _run_typed(self, text):
+        try:
+            agent.handle_typed(text)
+        except Exception as e:
+            LOG_QUEUE.put(("log", f"\n(Typed command e somossa: {e})\n"))
+
+    def _on_lang_change(self, _event=None):
+        sel = self.lang_combo.get()
+        code = "en" if sel == "English" else "bn"
+        try:
+            agent.set_language(code)
+        except Exception:
+            pass
+        print(f"(Language: {sel})")
 
     def _on_close(self):
         try:

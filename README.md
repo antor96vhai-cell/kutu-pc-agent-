@@ -97,6 +97,12 @@ Ekhon KUTU ekta **app window** te chole — protidin kalo console kholar dorkar 
   save hoy. Kono somossa hole **oi file ta KUTU ke pathiye dio** — dekhei
   bole debe ki hoyeche.
 - ▶️ **Start / Stop button** diye window thekei chalu-bhondo kora jay.
+- ⌨️ **Chat box (v3.1):** window er niche type koreo command deya jay —
+  mic e bolte na chaile likhe **Pathao** chap dilei hobe, **wake word lage na**.
+  Voice ar chat pasapashi chole, ek sathe duita command atkabe na.
+- 🌐 **Language (v3.1):** window er upore **Language** option theke
+  **Bangla / English** select kora jay — shona, bola, sob oi bhasha follow
+  korbe. Choice ta save thake, tai protibar set korte hoy na.
 - Kalo console (purono style) chaile **run.bat** — ota ekhon debug mode,
   kaj sob ek-i.
 

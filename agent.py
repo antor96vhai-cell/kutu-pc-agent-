@@ -1,5 +1,5 @@
 # ============================================================
-#  KUTU PC Agent v3 - Tomar nijer voice assistant (Jarvis style)
+#  KUTU PC Agent v3.1 - Tomar nijer voice assistant (Jarvis style)
 #  Owner: Antor
 #  Bolbe "Kutu" -> shunbe -> kaj korbe -> mukhe jawab debe.
 #
@@ -12,6 +12,11 @@
 #  desktop shortcut, chalu howar somoy nijer self-check,
 #  sob print er log file (kutu.log), ar planner ekhon ager
 #  koyekta command mone rakhe (follow-up bujhte pare).
+#
+#  v3.1 te notun: app window te type koreo command deya jay
+#  (chat box - wake word lage na, voice er pasapashi chole),
+#  ar Bangla/English bhasha select korar option ache
+#  (choice settings.json e save thake).
 #
 #  Change korte chaile beshir bhaag setting ei file er
 #  uporer CONFIG ongsho tei ache. Bhoy nai, venge jabe na!
@@ -26,6 +31,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -53,6 +59,10 @@ GUI_MODE = False
 # Stop button (ba GUI bondho kora) eta True kore dile main loop
 # porer check-ei theme jabe.
 STOP_REQUESTED = False
+
+# Voice loop ar GUI chat box - ek sathe jeno duita command
+# na chole, tai handle_command sob somoy ei lock dhore chole.
+COMMAND_LOCK = threading.Lock()
 
 # Sesh self-check er result (GUI window dekhanor jonno)
 LAST_SELF_CHECK = []
@@ -138,9 +148,14 @@ def _install_log_tee():
 
 # ------------------ CONFIG (ekhane change koro) ------------------
 
-# Microphone diye shona r language. "bn-BD" = Bangla,
-# "en-US" = English. Bangla bolle bn-BD e best kaj kore.
-LANG = "bn-BD"
+# App er bhasha: "bn" = Bangla (default), "en" = English.
+# GUI r Language option theke jekono somoy bodlano jay -
+# choice ta settings.json file e save thake, tai barbar
+# set korte hoy na. (.env te KUTU_LANG=bn/en dile shetao
+# cholbe, kintu settings.json thakle setai age pabe.)
+# Shona (recognition) ar mukhe bola - duitai ei LANG thekei
+# hoy (recog_languages / pick_voice dekho).
+LANG = "bn"
 
 # Kon shobdo shunle Kutu jagbe (wake word). Recognizer "Kutu" ke
 # majhe majhe "কুটুক" / "কটু" emon bhul likhe fele, tai ekhane
@@ -157,6 +172,86 @@ WAKE_FILLERS = ["hey", "হে", "ও", "oi", "ঐ"]
 # Voice (mukhe jawab dewar gola)
 VOICE_BN = "bn-BD-NabanitaNeural"   # Bangla meye voice
 VOICE_EN = "en-US-AriaNeural"       # English voice
+
+# ------------------ Bhasha r setting (Bangla / English) ------------------
+
+# Bhasha r choice ei file e save thake (program er folder ei)
+SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "settings.json")
+
+
+def load_settings():
+    """settings.json theke bhasha r choice load kore.
+    Priority: settings.json > .env er KUTU_LANG > "bn".
+    File na thakle / ulta-palta hole default "bn"-i thake.
+    Kokhono crash kore na."""
+    global LANG
+    try:
+        if os.path.exists(SETTINGS_PATH):
+            with open(SETTINGS_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            lang = str(data.get("lang", "")).strip().lower()
+            if lang in ("bn", "en"):
+                LANG = lang
+                return LANG
+    except Exception:
+        pass
+    try:
+        env_lang = os.environ.get("KUTU_LANG", "").strip().lower()
+        if env_lang in ("bn", "en"):
+            LANG = env_lang
+    except Exception:
+        pass
+    return LANG
+
+
+def set_language(lang):
+    """Bhasha bodlay + settings.json e save kore rakhe.
+    Vul value ashle False ferot dey, kichui bodlay na."""
+    global LANG
+    lang = str(lang or "").strip().lower()
+    if lang not in ("bn", "en"):
+        return False
+    LANG = lang
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump({"lang": lang}, f)
+    except Exception:
+        pass
+    return True
+
+
+# Kichu fixed kotha - jeta select kora bhashay bola hoy.
+# (Gemini planner/agent er dynamic jawab emnitei Antor er
+# bhasha follow kore - segulo ekhane na.)
+PHRASES = {
+    "greeting": {
+        "bn": "আসসালামু আলাইকুম Antor! Ami Kutu, ready achi. Amake daklei hobe.",
+        "en": "Hello Antor! I am Kutu, ready and listening. Just call my name when you need me.",
+    },
+    "wake_ack": {
+        "bn": "জি Antor, bolo?",
+        "en": "Yes Antor, tell me?",
+    },
+    "done": {
+        "bn": "হয়ে গেছে!",
+        "en": "Done!",
+    },
+    "not_understood": {
+        "bn": "দুঃখিত Antor, ekhon bujhte parlam na. Internet ba API key ta check koro.",
+        "en": "Sorry Antor, I could not understand that. Please check the internet or the API key.",
+    },
+    "goodbye": {
+        "bn": "ঠিক আছে Antor, বিদায়! Abar dorkar hole dak dio.",
+        "en": "Okay Antor, goodbye! Call me again whenever you need me.",
+    },
+}
+
+
+def phrase(key):
+    """Select kora bhashay fixed kotha ta ferot dey."""
+    variants = PHRASES.get(key, {})
+    return variants.get(LANG) or variants.get("bn") or ""
 
 # Gemini model (brain): code e ar kono fixed model er naam-e bharosha nai!
 # Program chalu howar somoy Google er kache jene ney ekhon kon kon
@@ -277,6 +372,11 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+# Bhasha r save kora choice ekhon load kori (.env porar
+# porei kori, jate KUTU_LANG-o dhora jay). main() teo abar
+# load hoy - dui jaygay-e safe.
+load_settings()
 
 # ------------------ Gemini brain setup ------------------
 
@@ -463,12 +563,26 @@ def play_mp3(filename):
     sd.wait()
 
 
+def pick_voice(text):
+    """Jawab er lekha dekhe kon voice e bola hobe beche ney.
+    Lekha te Bangla akkhor thakle sob somoy Bangla voice
+    (English mode eo), Latin akkhor thakle English voice -
+    mane ulta bhashar lekha ulta gola te asbe na.
+    Duitar kichui na thakle (sudhu number / chinho) select
+    kora bhasha tai default hoy."""
+    if has_bangla(text):
+        return VOICE_BN
+    if any(ch.isalpha() for ch in text):
+        return VOICE_EN
+    return VOICE_BN if LANG == "bn" else VOICE_EN
+
+
 def speak(text):
     """Console e print kore + mukhe bole dey."""
     print("\nKUTU:", text)
     emit("reply", text)
     emit("status", "speaking")
-    voice = VOICE_BN if has_bangla(text) else VOICE_EN
+    voice = pick_voice(text)
     filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_kutu_voice.mp3")
     try:
         asyncio.run(_make_mp3(text, voice, filename))
@@ -644,6 +758,16 @@ def record_phrase(timeout=6, phrase_limit=8):
     return sr.AudioData(b"".join(chunks), SAMPLE_RATE, SAMPLE_WIDTH)
 
 
+def recog_languages():
+    """Shonar bhasha jora (primary, fallback) ferot dey.
+    Bangla select thakle age bn-BD pore en-US; English select
+    thakle ulta ta. Prothom ta miss hole onno ta diye ar
+    ekbar try hoy - mixed bhasha tei tai kaj chole."""
+    if LANG == "en":
+        return ("en-US", "bn-BD")
+    return ("bn-BD", "en-US")
+
+
 def listen(timeout=6, phrase_limit=8):
     """Mic theke shone, lekha (text) ferot dey. Na bujhle None."""
     try:
@@ -655,22 +779,22 @@ def listen(timeout=6, phrase_limit=8):
         return None
     if audio is None:
         return None
+    primary, fallback = recog_languages()
     text = None
     try:
-        text = recognizer.recognize_google(audio, language=LANG)
+        text = recognizer.recognize_google(audio, language=primary)
     except sr.UnknownValueError:
-        # Prothom bar bujha jay ni - poriskar English command
-        # bn-BD te majhe majhe miss hoy, tai ar ekbar en-US
-        # diye try kori, tarporeo na hole hobe na
-        if LANG != "en-US":
-            try:
-                text = recognizer.recognize_google(audio, language="en-US")
-            except sr.UnknownValueError:
-                text = None
-            except sr.RequestError:
-                print("Internet nai mone hoy - voice shona jacche na.")
-                time.sleep(2)
-                return None
+        # Prothom bhashay bujha jay ni - onno bhasha diye ar
+        # ekbar try kori (Bangla mode e poriskar English command
+        # bn-BD te majhe majhe miss hoy, ulta tao shotto)
+        try:
+            text = recognizer.recognize_google(audio, language=fallback)
+        except sr.UnknownValueError:
+            text = None
+        except sr.RequestError:
+            print("Internet nai mone hoy - voice shona jacche na.")
+            time.sleep(2)
+            return None
     except sr.RequestError:
         print("Internet nai mone hoy - voice shona jacche na.")
         time.sleep(2)
@@ -1432,7 +1556,7 @@ def handle_command(command):
     # Sesh kotha: stop / goodbye
     low = command.lower()
     if low.strip() in ("stop", "goodbye", "bye", "বিদায়", "থামো", "bondho koro"):
-        speak("ঠিক আছে Antor, বিদায়! Abar dorkar hole dak dio.")
+        speak(phrase("goodbye"))
         return False
 
     # Age local fast-path: common kaj Gemini charai sathe sathe hoy
@@ -1456,7 +1580,7 @@ def handle_command(command):
             plan = None
 
     if plan is None:
-        speak("দুঃখিত Antor, ekhon bujhte parlam na. Internet ba API key ta check koro.")
+        speak(phrase("not_understood"))
         return True
 
     action = plan["action"]
@@ -1483,8 +1607,36 @@ def handle_command(command):
     if say:
         speak(say)
     elif action != "none":
-        speak("হয়ে গেছে!" if ok else "দুঃখিত, kaj ta korte parlam na.")
+        speak(phrase("done") if ok else "দুঃখিত, kaj ta korte parlam na.")
     return True
+
+def handle_typed(text):
+    """GUI chat box theke type kora command chalai (v3.1).
+    Wake word lage na - likhlei kaj kore. Voice loop er
+    sathe ek-i COMMAND_LOCK share kore, jate duita command
+    ek sathe na chole: voice path busy thakle eta wait kore.
+    Voice loop na cholleo standalone kaj kore (fast-path
+    emnitei hoy; brain ready na thakle bujhte-parlam-na
+    jawab tai asbe, console er motoi).
+    Type kore stop/bye likhle voice loop-o theme jabe."""
+    global STOP_REQUESTED
+    text = (text or "").strip()
+    if not text:
+        return
+    print(f"⌨️ Tumi likhle: {text}")
+    waited = False
+    wait_start = time.time()
+    while not COMMAND_LOCK.acquire(timeout=0.25):
+        if not waited and time.time() - wait_start > 1:
+            print("(ektu wait koro, ager kaj cholche...)")
+            waited = True
+    try:
+        keep_running = handle_command(text)
+    finally:
+        COMMAND_LOCK.release()
+    if keep_running is False:
+        STOP_REQUESTED = True
+
 
 # ------------------ Main loop ------------------
 
@@ -1518,9 +1670,11 @@ def main():
     # Sob print ekhon theke kutu.log file-eo jabe (somossa hole
     # debugging er jonno) - console e jemon chilo temni thakbe
     _install_log_tee()
+    # Save kora bhasha r choice (abar) load kori
+    load_settings()
 
     print("=" * 55)
-    print("   KUTU PC AGENT v3 - Antor er voice assistant")
+    print("   KUTU PC AGENT v3.1 - Antor er voice assistant")
     print("=" * 55)
 
     if not API_KEY or gemini is None:
@@ -1568,7 +1722,7 @@ def main():
         print()
         print("(Note: ghor ekdom chup thakay noise 0 dekhacche — eta hote pare normal. Mic kaj na korle: '🎧 Shunlam' line ashe kina dekho; na ashle README r mic troubleshooting dekho.)")
 
-    speak("আসসালামু আলাইকুম Antor! Ami Kutu, ready achi. Amake daklei hobe.")
+    speak(phrase("greeting"))
 
     try:
         while True:
@@ -1589,12 +1743,16 @@ def main():
                     continue  # wake word sara kotha ignore
                 print("\n[Jaglam!] Shunlam:", text)
                 if command == "":
-                    speak("জি Antor, bolo?")
+                    speak(phrase("wake_ack"))
                     emit("status", "listening")
                     command = listen(timeout=8, phrase_limit=10)
                     if not command:
                         continue
-                if not handle_command(command):
+                # Typed chat er sathe jeno collision na hoy -
+                # command chola obosthay lock dhore rakhi
+                with COMMAND_LOCK:
+                    keep_running = handle_command(command)
+                if not keep_running:
                     break
             except KeyboardInterrupt:
                 raise
